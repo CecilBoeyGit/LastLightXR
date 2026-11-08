@@ -1,0 +1,16 @@
+Library/
+Temp/
+Logs/
+*.csproj
+*.slnx
+.vscode/
+# Build outputs, user settings and raw downloads
+[Bb]uilds/
+[Oo]bj/
+UserSettings/
+*.apk
+*.aab
+*.csproj
+*.sln
+Tools/Tripo/runs/
+.claude/settings.local.json
