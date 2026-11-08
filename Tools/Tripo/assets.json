@@ -1,0 +1,342 @@
+{
+  "version": 1,
+  "project": "Last Light",
+  "output_root": "Assets/LastLight/Art/Tripo",
+  "staging_root": "Tools/Tripo/runs",
+
+  "world_scale": {
+    "nominal_ratio": "1:40 for vehicles and characters; trees and cliffs are compressed (diorama style) so the 1.2 m disk still reads as a forest",
+    "disk_diameter_m": 1.2,
+    "road_width_m": 0.33,
+    "lane_width_m": 0.11,
+    "note": "target_size_m values are what the prefab should measure in Unity world units after import. Reconcile with the gameplay code (Assets/LastLight/Scripts) if it defines different lane or disk dimensions; the gameplay values win."
+  },
+
+  "style": {
+    "prompt_suffix": "stylized 3D miniature diorama game asset, crisp clean shapes, chunky readable silhouette, slightly exaggerated proportions, hand-painted matte textures, muted midnight pine green and charcoal palette, single isolated object, no ground, no base",
+    "negative_base": "photorealistic, photo scan, noisy detail, text, logo, watermark, ground plane, base plate, pedestal, multiple objects, blurry texture, glossy plastic",
+    "palette": {
+      "midnight_pine_green": "#1F3A2E",
+      "charcoal": "#2B2D2F",
+      "warm_amber_light": "#FFB347",
+      "acid_green_route": "#B6FF3B",
+      "muted_coral_danger": "#E0735F",
+      "ochre_vehicle": "#C8902E",
+      "pale_zombie_skin": "#C9CCB8"
+    }
+  },
+
+  "defaults": {
+    "model": "tripo-p2",
+    "texture_quality": "detailed",
+    "static_chain": { "format": "FBX", "pivot_to_center_bottom": true },
+    "rig": { "spec": "unity", "out_format": "fbx" },
+    "retarget": { "animate_in_place": true, "out_format": "fbx" }
+  },
+
+  "pricing": {
+    "source": "https://developers.tripo3d.ai/en/pricing and tripo docs --topic commands/generate (tripo-cli 0.8.0), checked 2026-10-28. 1 credit = 0.01 USD. List prices; the CLI plan card / dry run is authoritative for the generation step.",
+    "generation": {
+      "tripo-p2": { "none": 100, "standard": 110, "detailed": 120, "extreme": 130 },
+      "tripo-v3.1-text": { "none": 10, "standard": 20, "detailed": 30, "extreme": 40 },
+      "tripo-v3.1-image": { "none": 20, "standard": 30, "detailed": 40, "extreme": 50 },
+      "tripo-p1": null
+    },
+    "v31_addons": { "smart_low_poly": 10, "quad": 5, "geometry_quality_detailed": 20, "generate_parts": 20 },
+    "convert_basic": 5,
+    "convert_advanced": 10,
+    "rig_check": 0,
+    "rig": 25,
+    "retarget_per_animation": 10
+  },
+
+  "assets": [
+    {
+      "id": "jeep",
+      "enabled": true,
+      "category": "vehicle",
+      "hero": true,
+      "prompt": "small ochre yellow two-door off-road jeep, boxy rugged body, roof rack with a jerry can and a strapped bag, spare tire mounted on the rear door, oversized chunky off-road tires, round headlights, black bumpers and fender flares, light mud splashes on the lower body",
+      "negative_prompt": "sports car, sedan, pickup truck bed, open roof, driver, people",
+      "model": "tripo-p2",
+      "texture_quality": "detailed",
+      "face_limit": 8000,
+      "texture_size": 2048,
+      "target_size_m": { "length": 0.10, "width": 0.05, "height": 0.05 },
+      "rig": false,
+      "animations": [],
+      "unity": {
+        "prefab": "LL_Jeep",
+        "replaces_placeholder": "jeep / car primitive (cube) in the gameplay scene",
+        "max_texture_size": 1024,
+        "lod": "none needed (single instance, always near disk centre)",
+        "forward_axis": "front must face +Z under the prefab root",
+        "collider": "BoxCollider on prefab root",
+        "extras": "add two child spot lights or emissive quads at the headlights in Unity (warm amber); wheels are part of the mesh, fake wheel spin with a texture scroll or skip"
+      },
+      "notes": "Hero asset and pipeline test. Close-up view, so detailed texture and 2048 convert size."
+    },
+    {
+      "id": "zombie_a",
+      "enabled": true,
+      "category": "character",
+      "prompt": "tiny pale zombie, full body, T-pose with arms straight out to the sides, standing straight, legs slightly apart, gaunt pale grey-green skin, torn charcoal shirt and dark trousers, small muted coral wounds, bald head, simple readable shapes, symmetrical",
+      "negative_prompt": "gore, organs, weapon, held objects, hat, cape, crouching, sitting, crowd",
+      "model": "tripo-p2",
+      "texture_quality": "detailed",
+      "face_limit": 1800,
+      "texture_size": null,
+      "target_size_m": { "height": 0.045 },
+      "rig": true,
+      "rig_type": "biped",
+      "animations": ["walk", "run"],
+      "unity": {
+        "prefab": "LL_Zombie_A",
+        "replaces_placeholder": "zombie capsule primitive in the horde",
+        "max_texture_size": 512,
+        "rig_import": "Animation Type Humanoid, Avatar created from this model; clips from LL_Zombie_A@walk.fbx and LL_Zombie_A@run.fbx (Loop Time on, Root Transform baked)",
+        "lod": "LOD0 1800 tris; optional LOD1 about 600 tris via Blender Decimate for far horde members; cull below 2 percent screen height",
+        "collider": "CapsuleCollider on prefab root",
+        "extras": "use GPU skinning; consider baked vertex animation later if the horde exceeds about 30 skinned meshes"
+      },
+      "notes": "Base stage = generate + rig-check + rig (Unity humanoid spec, FBX). Each animation is a separate retarget stage (10 credits each) producing its own FBX. Optional extra clips available on rig v3.0 biped: idle, hurt, fall, turn, jump."
+    },
+    {
+      "id": "zombie_b",
+      "enabled": true,
+      "category": "character",
+      "prompt": "tiny pale zombie, full body, T-pose with arms straight out to the sides, standing straight, tall lanky thin build with long arms and a slight forward hunch, pale bluish-white skin, tattered long charcoal coat, faint glowing pale eyes, simple readable silhouette, symmetrical",
+      "negative_prompt": "gore, organs, weapon, held objects, hat, crouching, sitting, crowd",
+      "model": "tripo-p2",
+      "texture_quality": "detailed",
+      "face_limit": 1800,
+      "texture_size": null,
+      "target_size_m": { "height": 0.05 },
+      "rig": true,
+      "rig_type": "biped",
+      "animations": ["walk", "run"],
+      "unity": {
+        "prefab": "LL_Zombie_B",
+        "replaces_placeholder": "zombie capsule primitive (variant); candidate silhouette for the later light-lure zombie",
+        "max_texture_size": 512,
+        "rig_import": "Humanoid; same setup as zombie_a so clips can be shared through the Humanoid avatar",
+        "lod": "as zombie_a",
+        "collider": "CapsuleCollider on prefab root"
+      },
+      "notes": "Distinct taller silhouette so players can tell variants apart."
+    },
+    {
+      "id": "pine_a",
+      "enabled": true,
+      "category": "foliage",
+      "prompt": "tall narrow stylized pine tree, conical shape built from four or five chunky layered foliage tiers, deep midnight pine green needles with slightly lighter tips, short visible dark brown trunk at the bottom",
+      "negative_prompt": "palm tree, leaves, flowers, snow, ornaments, grass patch",
+      "model": "tripo-p2",
+      "texture_quality": "detailed",
+      "face_limit": 800,
+      "texture_size": 1024,
+      "target_size_m": { "height": 0.28 },
+      "rig": false,
+      "animations": [],
+      "unity": {
+        "prefab": "LL_Pine_A",
+        "replaces_placeholder": "tree cone/cylinder primitive",
+        "max_texture_size": 512,
+        "lod": "none (all trees are within about 1.5 m of the viewer); enable GPU Instancing on the material",
+        "collider": "none (decorative); blockage trees use the fallen_log asset"
+      },
+      "notes": "Many instances per chunk; keep triangle count low."
+    },
+    {
+      "id": "pine_b",
+      "enabled": true,
+      "category": "foliage",
+      "prompt": "medium height full stylized pine tree, wide lower branches tapering to a pointed top, chunky clustered foliage clumps, dark midnight pine green with charcoal shadows, thick dark brown trunk",
+      "negative_prompt": "palm tree, leaves, flowers, snow, ornaments, grass patch",
+      "model": "tripo-p2",
+      "texture_quality": "detailed",
+      "face_limit": 800,
+      "texture_size": 1024,
+      "target_size_m": { "height": 0.22 },
+      "rig": false,
+      "animations": [],
+      "unity": {
+        "prefab": "LL_Pine_B",
+        "replaces_placeholder": "tree cone/cylinder primitive",
+        "max_texture_size": 512,
+        "lod": "none; GPU Instancing on",
+        "collider": "none"
+      }
+    },
+    {
+      "id": "pine_c",
+      "enabled": true,
+      "category": "foliage",
+      "prompt": "dead stylized pine snag, tall bare grey weathered trunk, a few broken leafless branches, jagged broken top, slightly leaning, spooky night forest mood",
+      "negative_prompt": "leaves, needles, green foliage, flowers, snow, grass patch",
+      "model": "tripo-p2",
+      "texture_quality": "detailed",
+      "face_limit": 600,
+      "texture_size": 1024,
+      "target_size_m": { "height": 0.24 },
+      "rig": false,
+      "animations": [],
+      "unity": {
+        "prefab": "LL_Pine_C",
+        "replaces_placeholder": "tree primitive (dead variant)",
+        "max_texture_size": 512,
+        "lod": "none; GPU Instancing on",
+        "collider": "none"
+      }
+    },
+    {
+      "id": "boulder_a",
+      "enabled": true,
+      "category": "hazard",
+      "prompt": "rounded chunky boulder, softly faceted stylized rock, charcoal grey granite with small dark moss patches, a few crisp cracks",
+      "negative_prompt": "crystals, gems, lava, glowing, ground, pebbles around it",
+      "model": "tripo-p2",
+      "texture_quality": "detailed",
+      "face_limit": 600,
+      "texture_size": 1024,
+      "target_size_m": { "diameter": 0.05 },
+      "rig": false,
+      "animations": [],
+      "unity": {
+        "prefab": "LL_Boulder_A",
+        "replaces_placeholder": "falling rock sphere primitive",
+        "max_texture_size": 512,
+        "lod": "none",
+        "collider": "SphereCollider (keep the generous gameplay interaction volume separate from the visual mesh)",
+        "extras": "pivot should be the centre of mass for tumbling; re-centre in the prefab (convert puts the pivot at bottom centre)"
+      },
+      "notes": "Sweepable falling debris. Also used for the ricochet mechanic."
+    },
+    {
+      "id": "boulder_b",
+      "enabled": true,
+      "category": "hazard",
+      "prompt": "angular jagged rock chunk, sharp flat planar facets, slate grey stone with lighter chipped edges, stylized and chunky",
+      "negative_prompt": "crystals, gems, lava, glowing, ground, pebbles around it",
+      "model": "tripo-p2",
+      "texture_quality": "detailed",
+      "face_limit": 600,
+      "texture_size": 1024,
+      "target_size_m": { "diameter": 0.045 },
+      "rig": false,
+      "animations": [],
+      "unity": {
+        "prefab": "LL_Boulder_B",
+        "replaces_placeholder": "falling rock primitive (variant)",
+        "max_texture_size": 512,
+        "lod": "none",
+        "collider": "SphereCollider",
+        "extras": "re-centre pivot to centre of mass in the prefab"
+      }
+    },
+    {
+      "id": "fallen_log",
+      "enabled": true,
+      "category": "hazard",
+      "prompt": "fallen pine tree trunk lying horizontally, long cylindrical log with rough dark bark, splintered broken end on one side, a clump of roots on the other end, a few short dead branch stubs, small moss patches",
+      "negative_prompt": "standing tree, leaves, green foliage, axe, campfire, ground, multiple logs",
+      "model": "tripo-p2",
+      "texture_quality": "detailed",
+      "face_limit": 1200,
+      "texture_size": 1024,
+      "target_size_m": { "length": 0.15, "diameter": 0.03 },
+      "rig": false,
+      "animations": [],
+      "unity": {
+        "prefab": "LL_FallenLog",
+        "replaces_placeholder": "lane blockage box primitive",
+        "max_texture_size": 512,
+        "lod": "none",
+        "forward_axis": "log length along local X so it lies across a lane",
+        "collider": "BoxCollider covering one lane"
+      },
+      "notes": "Blocks one lane (lane width 0.11 m) with a little overhang."
+    },
+    {
+      "id": "cliff_chunk",
+      "enabled": true,
+      "category": "environment",
+      "prompt": "stylized cliff rock chunk, tall stacked layered rock slab formation with flat top, vertical cracks and ledges, charcoal and slate grey stone, small moss and grass tufts on the ledges",
+      "negative_prompt": "waterfall, castle, stairs, crystals, floating island, trees",
+      "model": "tripo-p2",
+      "texture_quality": "detailed",
+      "face_limit": 2500,
+      "texture_size": 1024,
+      "target_size_m": { "height": 0.25, "width": 0.30, "depth": 0.15 },
+      "rig": false,
+      "animations": [],
+      "unity": {
+        "prefab": "LL_CliffChunk",
+        "replaces_placeholder": "cliff wall box primitive beside the left lane",
+        "max_texture_size": 1024,
+        "lod": "none",
+        "collider": "MeshCollider (convex off) or a few BoxColliders",
+        "extras": "falling-rock spawn points go on its top ledge"
+      },
+      "notes": "Placed along the road edge; mirror and rotate instances to hide repetition."
+    },
+    {
+      "id": "island_underside",
+      "enabled": true,
+      "category": "environment",
+      "prompt": "underside of a floating island, inverted cone of rough layered rock and earth hanging below a flat circular top, dangling roots, charcoal and dark brown stone strata, flat empty circular top surface",
+      "negative_prompt": "trees on top, buildings, waterfall, grass on top, people",
+      "model": "tripo-p2",
+      "texture_quality": "detailed",
+      "face_limit": 4000,
+      "texture_size": 2048,
+      "target_size_m": { "diameter": 1.2, "depth": 0.45 },
+      "rig": false,
+      "animations": [],
+      "unity": {
+        "prefab": "LL_IslandUnderside",
+        "replaces_placeholder": "disk cylinder primitive (underside/rim only)",
+        "max_texture_size": 1024,
+        "lod": "none",
+        "collider": "none",
+        "extras": "static, never scrolls; the scrolling top surface stays procedural. Scale X/Z non-uniformly if the generated top is not perfectly circular."
+      },
+      "notes": "Optional polish: the playable disk top must be procedural (see island_disk_top)."
+    },
+    {
+      "id": "island_disk_top",
+      "enabled": false,
+      "procedural": true,
+      "category": "environment",
+      "unity": {
+        "prefab": "LL_IslandDisk",
+        "replaces_placeholder": "disk cylinder primitive"
+      },
+      "notes": "Build procedurally in Unity: the top surface and road are scrolling chunk meshes clipped/masked to the 1.2 m circle, with exact three-lane geometry and a dark rim band. Tripo cannot produce exact lane widths or tileable scrolling chunks."
+    },
+    {
+      "id": "scout_light_orb",
+      "enabled": false,
+      "procedural": true,
+      "category": "fx",
+      "unity": { "prefab": "LL_ScoutOrb", "replaces_placeholder": "flashlight orb sphere" },
+      "notes": "Procedural: small sphere with an emissive warm amber URP material plus a Spot Light and an additive cone mesh or decal. No Tripo asset needed."
+    },
+    {
+      "id": "brake_plate",
+      "enabled": false,
+      "procedural": true,
+      "category": "ui",
+      "unity": { "prefab": "LL_BrakePlate", "replaces_placeholder": "brake plate quad/cylinder" },
+      "notes": "Procedural: thin rounded cylinder or ring with an emissive rim (muted coral when active). Must match the interaction volume exactly, so author it in Unity."
+    },
+    {
+      "id": "lane_beacon",
+      "enabled": false,
+      "procedural": true,
+      "category": "ui",
+      "unity": { "prefab": "LL_LaneBeacon", "replaces_placeholder": "beacon sphere above the car" },
+      "notes": "Procedural: emissive amber sphere or diamond with an acid green ghost-path line renderer for the lane preview."
+    }
+  ]
+}
