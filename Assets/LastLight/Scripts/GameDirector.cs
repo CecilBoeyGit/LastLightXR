@@ -6,7 +6,7 @@ using UnityEngine.XR.Hands;
 
 namespace LastLight
 {
-    public enum RunState { Running, Paused, GameOver }
+    public enum RunState { Running, Paused, GameOver, Menu, Tutorial }
 
     /// <summary>How the test autopilot drives. Normal plays well; the others deliberately exercise failure paths.</summary>
     public enum AutopilotMode { Normal, NoSteering, TakeDeadEnds, EscapeDeadEnds, FallOffCliffs }
@@ -72,6 +72,14 @@ namespace LastLight
         [Tooltip("How strongly the passthrough is tinted black. 0 is the untouched room, 1 is fully black.")]
         public float passthroughTint = 0.3f;
 
+        [Header("Menu and tutorial")]
+        [Tooltip("Show the title menu when the game starts.")]
+        public bool showMenuOnBoot = true;
+        [Tooltip("Play the 5-second how-to-play card before every run.")]
+        public bool tutorialEachRun = true;
+        [Tooltip("Where the menu and tutorial panel floats, in disk units: above and behind the far rim.")]
+        public Vector3 uiPanelPosition = new Vector3(0f, 13f, 16f);
+
         public RunState State { get; private set; }
         public float Distance { get; private set; }
         public float Gap { get; private set; }
@@ -84,6 +92,13 @@ namespace LastLight
         public TrackGenerator Track => track;
         public Interventions Hands => interventions;
         public Horde Crowd => horde;
+        public StartMenu Menu => menu;
+        public TutorialPanel Tutorial => tutorial;
+        public float TutorialTime => tutorialTime;
+        /// <summary>The player's head in disk units, where the disk is placed relative to it.</summary>
+        public Vector3 HeadLocal => -diskOffsetFromHead / Mathf.Max(diorama.Scale, 1e-5f);
+        /// <summary>Presses whatever the player is looking at, as a pinch would. For tests and other inputs.</summary>
+        public void PressSelect() => pendingSelect = true;
         public readonly List<string> EventLog = new List<string>();
 
         TrackGenerator track;
@@ -116,7 +131,14 @@ namespace LastLight
         bool recentered;
         bool handEverSeen;
         IntentFrame pendingIntents;
-        bool gripWas, buttonWas;
+        bool gripWas, buttonWas, triggerWas;
+        StartMenu menu;
+        TutorialPanel tutorial;
+        Transform uiRoot;
+        float tutorialTime;
+        bool tutorialFromMenu;
+        bool pinchWas, pendingSelect, pendingStart, pendingHowTo;
+        int runSeed;
 
         const string BestKey = "LastLight.BestDistance";
 
@@ -156,6 +178,12 @@ namespace LastLight
             {
                 // Desktop view for Editor testing without a headset.
                 Vector3 c = diorama.transform.position;
+                if (State == RunState.Menu || State == RunState.Tutorial)
+                {
+                    head.position = diorama.ToWorld(HeadLocal);
+                    head.LookAt(uiRoot.position);
+                    return;
+                }
                 head.position = c + new Vector3(0f, 0.6f, -0.8f);
                 head.LookAt(c + new Vector3(0f, 0f, 0.15f));
             }
@@ -191,8 +219,11 @@ namespace LastLight
             dwellRing.gameObject.SetActive(false);
 
             BuildHud();
+            BuildPanels();
             Best = PlayerPrefs.GetFloat(BestKey, 0f);
-            Restart();
+            PrepareRun();
+            if (showMenuOnBoot && !autopilot) OpenMenu();
+            else BeginRun();
         }
 
         TrackGenerator NewTrack(int trackSeed)
@@ -204,10 +235,51 @@ namespace LastLight
             return t;
         }
 
+        /// <summary>Resets the world for a new run, then plays the tutorial card or starts straight away.</summary>
         public void Restart()
         {
+            PrepareRun();
+            BeginRun();
+        }
+
+        void BeginRun()
+        {
+            if (tutorialEachRun) ShowTutorial(false);
+            else StartRunning();
+        }
+
+        void StartRunning()
+        {
+            menu.Visible = false;
+            tutorial.Visible = false;
+            State = RunState.Running;
+            Log($"Run {runIndex} started, seed {runSeed}");
+        }
+
+        void OpenMenu()
+        {
+            State = RunState.Menu;
+            tutorial.Visible = false;
+            menu.Visible = true;
+            Log("Start menu shown");
+        }
+
+        void ShowTutorial(bool fromMenu)
+        {
+            State = RunState.Tutorial;
+            tutorialTime = 0f;
+            tutorialFromMenu = fromMenu;
+            menu.Visible = false;
+            tutorial.Visible = true;
+            tutorial.Show(0f);
+            Log(fromMenu ? "How to play opened from the menu" : $"Tutorial shown before run {runIndex}");
+        }
+
+        /// <summary>Resets the track, jeep, horde and scores. The world stays frozen until the run starts.</summary>
+        void PrepareRun()
+        {
             runIndex++;
-            int runSeed = fixedSeed ? seed : seed + runIndex * 7919;
+            runSeed = fixedSeed ? seed : seed + runIndex * 7919;
             track.Reset();
             if (!fixedSeed) track = NewTrack(runSeed);
             car.Reset();
@@ -226,11 +298,9 @@ namespace LastLight
             autoGazeTarget = null;
             lastCruise = cruiseSpeed;
             dwellRing.gameObject.SetActive(false);
-            State = RunState.Running;
             endReason = "";
             retryHold = 0f;
             autopilotRetry = 0f;
-            Log($"Run {runIndex} started, seed {runSeed}");
             track.Scroll(0f, 0f, 0, 20f);
         }
 
@@ -252,6 +322,16 @@ namespace LastLight
             IntentFrame intents = pendingIntents;
             pendingIntents = default;
             if (autopilot) intents = Autopilot(dt);
+
+            // A fresh pinch from either hand is a "select": it presses menu buttons and skips the tutorial.
+            // Holding a pinch from the retry gesture does not count until it is released.
+            bool pinchNow = (left.tracked && left.pinching) || (right.tracked && right.pinching);
+            bool select = (pinchNow && !pinchWas) || pendingSelect;
+            pinchWas = pinchNow;
+            pendingSelect = false;
+            if (State == RunState.Menu) TickMenu(dt, select);
+            else if (State == RunState.Tutorial) TickTutorial(dt, select);
+            pendingStart = pendingHowTo = false;
 
             // Usability pause: losing sight of both hands freezes car, horde and score together.
             if (State == RunState.Running && handsRequired && bothLost > trackingLossPause)
@@ -300,6 +380,35 @@ namespace LastLight
             float reveal = flashTimer > 0f ? Mathf.Clamp01(flashTimer / 0.5f) : 0f;
             diorama.PushShaderGlobals(scout.Patch, GazeScout.PatchRadius, scout.Intensity, headLocal, new Vector3(0f, -0.12f, 1f), reveal);
             UpdateHud();
+        }
+
+        void TickMenu(float dt, bool select)
+        {
+            Ray? gaze = null;
+            if (scout.TryGetLocalRay(out Vector3 o, out Vector3 d))
+                gaze = new Ray(diorama.ToWorld(o), diorama.transform.TransformDirection(d));
+            MenuAction action = menu.Tick(dt, gaze, select);
+            if (pendingStart) action = MenuAction.StartRun;
+            if (pendingHowTo) action = MenuAction.HowToPlay;
+            if (action == MenuAction.None) return;
+            sound?.Play(sound.commit);
+            if (action == MenuAction.StartRun)
+            {
+                Log("Start Run pressed");
+                BeginRun();
+            }
+            else ShowTutorial(true);
+        }
+
+        void TickTutorial(float dt, bool select)
+        {
+            tutorialTime += dt;
+            tutorial.Show(tutorialTime);
+            bool skipped = select && tutorialTime > 0.8f;
+            if (tutorialTime < TutorialPanel.Duration && !skipped) return;
+            Log(skipped ? $"Tutorial skipped at {tutorialTime:0.0} s" : "Tutorial finished");
+            if (tutorialFromMenu) OpenMenu();
+            else StartRunning();
         }
 
         /// <summary>Road-relative X of a disk-local point: 0 is the road centre at that point's place along the road.</summary>
@@ -615,8 +724,16 @@ namespace LastLight
             if (kb.fKey.wasPressedThisFrame || kb.wKey.wasPressedThisFrame) pendingIntents.sweep = true;
             if (kb.rKey.wasPressedThisFrame) Restart();
             if (kb.cKey.wasPressedThisFrame) recentered = false;
-            if (kb.pKey.wasPressedThisFrame && State != RunState.GameOver)
+            if (kb.pKey.wasPressedThisFrame && (State == RunState.Running || State == RunState.Paused))
                 State = State == RunState.Paused ? RunState.Running : RunState.Paused;
+            // Menu: Enter starts, H opens How to Play. Tutorial: Enter or Space skips.
+            if (kb.enterKey.wasPressedThisFrame || kb.spaceKey.wasPressedThisFrame)
+            {
+                if (State == RunState.Menu) pendingStart = true;
+                else pendingSelect = true;
+            }
+            if (kb.hKey.wasPressedThisFrame && State == RunState.Menu) pendingHowTo = true;
+            if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame) pendingSelect = true;
         }
 
         /// <summary>
@@ -626,7 +743,7 @@ namespace LastLight
         void ReadControllers()
         {
             float stickX = 0f;
-            bool grip = false, button = false;
+            bool grip = false, button = false, trigger = false;
             foreach (var node in new[] { XRNode.LeftHand, XRNode.RightHand })
             {
                 var dev = InputDevices.GetDeviceAtXRNode(node);
@@ -634,11 +751,14 @@ namespace LastLight
                 if (dev.TryGetFeatureValue(UnityEngine.XR.CommonUsages.primary2DAxis, out Vector2 axis) && Mathf.Abs(axis.x) > Mathf.Abs(stickX)) stickX = axis.x;
                 if (dev.TryGetFeatureValue(UnityEngine.XR.CommonUsages.gripButton, out bool g) && g) grip = true;
                 if (dev.TryGetFeatureValue(UnityEngine.XR.CommonUsages.primaryButton, out bool b) && b) button = true;
+                if (dev.TryGetFeatureValue(UnityEngine.XR.CommonUsages.triggerButton, out bool tr) && tr) trigger = true;
             }
             if (Mathf.Abs(stickX) > 0.2f) pendingIntents.steer = stickX;
             if (grip && !gripWas) pendingIntents.sweep = true;
             if (button && !buttonWas && State == RunState.GameOver) Restart();
-            gripWas = grip; buttonWas = button;
+            // Trigger or primary button acts like a pinch on the menu and tutorial.
+            if (((trigger && !triggerWas) || (button && !buttonWas)) && (State == RunState.Menu || State == RunState.Tutorial)) pendingSelect = true;
+            gripWas = grip; buttonWas = button; triggerWas = trigger;
         }
 
         IntentFrame Autopilot(float dt)
@@ -800,6 +920,18 @@ namespace LastLight
             banner = MakeText(bannerGo, font, 0.26f, TextAnchor.MiddleCenter, new Color(1f, 0.85f, 0.6f));
         }
 
+        /// <summary>The title menu and tutorial share one panel, floating above the far rim and facing the player.</summary>
+        void BuildPanels()
+        {
+            UISprite.LoadMaterials(out Material alphaMat, out Material addMat);
+            uiRoot = new GameObject("UI Panel").transform;
+            uiRoot.SetParent(diorama.transform, false);
+            uiRoot.localPosition = uiPanelPosition;
+            uiRoot.localRotation = Quaternion.LookRotation(uiPanelPosition - HeadLocal, Vector3.up);
+            menu = new StartMenu(uiRoot, alphaMat, addMat) { Visible = false };
+            tutorial = new TutorialPanel(uiRoot, alphaMat, addMat) { Visible = false };
+        }
+
         static TextMesh MakeText(Transform parent, Font font, float size, TextAnchor anchor, Color color)
         {
             var go = new GameObject("Text");
@@ -837,6 +969,7 @@ namespace LastLight
                 _ => "searching"
             };
             hud.text = $"DISTANCE  {Distance:0} m\nSPEED     {car.speed * 10f:0} km/h\nBEST      {Best:0} m\nCOINS     {Coins}\nHEALTH    {hp}\nGAP       {gapBar}\n{effects}\n{action}\nscout: {src}";
+            hudRoot.gameObject.SetActive(State != RunState.Menu && State != RunState.Tutorial);
 
             switch (State)
             {

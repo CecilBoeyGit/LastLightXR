@@ -4,6 +4,15 @@ Builds are release APKs for PICO Swan (Android, ARM64), package `com.lastlight.p
 Version history before git: 0.1.1 to 0.1.5 were built and installed but not committed, so the first
 commit holds the 0.1.6 source.
 
+## 0.1.7
+
+- Start menu: the retro comic title splash (the "eyes" version from the Codex session) floats above the disk,
+  with Start Run and How to Play buttons. Look at a button to focus it, then pinch with either hand.
+  Controller trigger, Enter and H also work.
+- A 5-second animated How to Play card before every run, retries included: a hand pinches the jeep's beacon and
+  slides it left and right, and an eye sweeps a scout light over a dark fork to reveal trees and a fallen log.
+  A fresh pinch skips it after the first 0.8 seconds. The world stays frozen until the run starts.
+
 ## 0.1.6
 
 - Removed braking entirely: the brake plate, the palm-down gesture, and the keyboard and controller brake.

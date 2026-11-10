@@ -44,5 +44,10 @@ namespace LastLight
         public static readonly Color Route = new Color(0.62f, 0.95f, 0.25f, 1f);
         public static readonly Color Danger = new Color(1f, 0.38f, 0.3f, 1f);
         public static readonly Color Background = Hex("#0b120f");
+
+        // Retro comic menu palette, matched to the title splash.
+        public static readonly Color UIInk = Hex("#0d1216");
+        public static readonly Color UIIvory = Hex("#f1e4c4");
+        public static readonly Color UIAmber = Hex("#f2a93b");
     }
 }

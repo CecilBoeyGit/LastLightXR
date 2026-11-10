@@ -112,3 +112,6 @@ InitTestScene*.unity*
 *.aab
 Tools/Tripo/runs/
 .claude/settings.local.json
+
+# Locally patched copy of Unity AI Assistant (fixes the MCP pipe ACL when the username equals the PC name)
+/[Pp]ackages/com.unity.ai.assistant/

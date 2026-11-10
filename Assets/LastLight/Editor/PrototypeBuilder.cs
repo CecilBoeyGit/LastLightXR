@@ -20,6 +20,7 @@ namespace LastLight.EditorTools
         const string TemplateScene = "Assets/Scenes/SampleScene.unity";
         const string ScenePath = "Assets/LastLight/Scenes/LastLight_Prototype.unity";
         const string MatDir = "Assets/LastLight/Materials";
+        const string UIDir = "Assets/LastLight/Resources/LastLightUI";
 
         [MenuItem("Last Light/Build Prototype Scene")]
         public static void Build()
@@ -28,6 +29,9 @@ namespace LastLight.EditorTools
             var terrain = MakeMaterial("LL_Terrain", "LastLight/Diorama", m => m.SetFloat("_ClipToDisk", 1f));
             var island = MakeMaterial("LL_IslandBase", "LastLight/Diorama", m => m.SetFloat("_ClipToDisk", 0f));
             var glow = MakeMaterial("LL_Glow", "LastLight/Glow", m => m.SetColor("_Tint", Color.white));
+            // Loaded at runtime from Resources, which also keeps the sprite shader in builds.
+            MakeMaterial("LL_UISprite", "LastLight/Sprite", m => m.SetColor("_Color", Color.white), UIDir);
+            ConfigureUITextures();
 
             var scene = EditorSceneManager.OpenScene(TemplateScene, OpenSceneMode.Single);
 
@@ -118,10 +122,35 @@ namespace LastLight.EditorTools
             }
         }
 
-        static Material MakeMaterial(string name, string shaderName, System.Action<Material> setup)
+        /// <summary>
+        /// Menu and tutorial art: trilinear with mipmaps so text stays clean at panel distance, clamped edges,
+        /// high-quality compression, and no rescaling of the non-power-of-two splash.
+        /// </summary>
+        static void ConfigureUITextures()
         {
-            Directory.CreateDirectory(MatDir);
-            string path = $"{MatDir}/{name}.mat";
+            foreach (string guid in AssetDatabase.FindAssets("t:Texture2D", new[] { UIDir }))
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                if (!(AssetImporter.GetAtPath(path) is TextureImporter ti)) continue;
+                ti.textureType = TextureImporterType.Default;
+                ti.sRGBTexture = true;
+                ti.alphaIsTransparency = true;
+                ti.alphaSource = TextureImporterAlphaSource.FromInput;
+                ti.npotScale = TextureImporterNPOTScale.None;
+                ti.mipmapEnabled = true;
+                ti.wrapMode = TextureWrapMode.Clamp;
+                ti.filterMode = FilterMode.Trilinear;
+                ti.anisoLevel = 4;
+                ti.maxTextureSize = 2048;
+                ti.textureCompression = TextureImporterCompression.CompressedHQ;
+                ti.SaveAndReimport();
+            }
+        }
+
+        static Material MakeMaterial(string name, string shaderName, System.Action<Material> setup, string dir = MatDir)
+        {
+            Directory.CreateDirectory(dir);
+            string path = $"{dir}/{name}.mat";
             var shader = Shader.Find(shaderName);
             if (shader == null) throw new System.Exception("Shader not found: " + shaderName);
             var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
@@ -215,7 +244,10 @@ namespace LastLight.EditorTools
             EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
             var director = Object.FindFirstObjectByType<GameDirector>();
             if (director == null) throw new System.Exception("GameDirector missing from scene");
-            director.autopilot = true;
+            // Boot as a player would, into the start menu. The autopilot phases switch it on later.
+            director.autopilot = false;
+            director.showMenuOnBoot = true;
+            director.tutorialEachRun = true;
             director.Boot();
 
             string outDir = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "Logs", "LastLightPreview"));
@@ -305,6 +337,64 @@ namespace LastLight.EditorTools
                 stats.AppendLine($"{name}: {t:0.0} s, furthest {maxDistance:0} m, coins {maxCoins}, lowest gap {minGap:0.00}, state {director.State}");
             }
 
+            // ----- Start menu and tutorial, driven by a scripted gaze ray and simulated pinches -----
+            Vector3 headWorld = d.TransformPoint(director.HeadLocal);
+            bool bootedToMenu = director.State == RunState.Menu;
+            float frozenDistance = 0f;
+            void LookFor(Vector3 target, float seconds)
+            {
+                director.Scout.ScriptedWorldRay = new Ray(headWorld, target - headWorld);
+                for (float s = 0f; s < seconds; s += dt)
+                {
+                    director.Tick(dt);
+                    if (director.State == RunState.Menu || director.State == RunState.Tutorial)
+                        frozenDistance = Mathf.Max(frozenDistance, director.Distance);
+                }
+            }
+            void Press() { director.PressSelect(); director.Tick(dt); }
+            Vector3 panelCenter = director.Menu.root.position;
+            LookFor(panelCenter, 0.5f);
+            Render(cam, rt, headWorld, panelCenter, Path.Combine(outDir, "view_menu.png"));
+
+            LookFor(director.Menu.ButtonWorldCenter(1), 0.4f);
+            bool howFocused = director.Menu.Focused == 1;
+            Render(cam, rt, headWorld, panelCenter, Path.Combine(outDir, "view_menu_focus_howto.png"));
+            Press();
+            bool howOpened = director.State == RunState.Tutorial;
+            LookFor(panelCenter, TutorialPanel.Duration + 0.2f);
+            bool howReturned = director.State == RunState.Menu;
+
+            LookFor(director.Menu.ButtonWorldCenter(0), 0.4f);
+            bool startFocused = director.Menu.Focused == 0;
+            Render(cam, rt, headWorld, panelCenter, Path.Combine(outDir, "view_menu_focus_start.png"));
+            Press();
+            bool tutorialBeforeRun = director.State == RunState.Tutorial;
+            LookFor(panelCenter, 2.0f);
+            Render(cam, rt, headWorld, panelCenter, Path.Combine(outDir, "view_tutorial_2s.png"));
+            LookFor(panelCenter, 1.4f);
+            Render(cam, rt, headWorld, panelCenter, Path.Combine(outDir, "view_tutorial_3s.png"));
+            int guard = 0;
+            while (director.State == RunState.Tutorial && guard++ < 300) LookFor(panelCenter, dt);
+            float tutorialSeconds = director.TutorialTime;
+            bool runStartedAfterTutorial = director.State == RunState.Running;
+            for (int i = 0; i < 30; i++) director.Tick(dt);
+            bool worldMovesAfterTutorial = director.Distance > 0f;
+
+            // A retry also shows the card, and a fresh pinch skips it once it has been up for a moment.
+            director.Restart();
+            bool retryShowsTutorial = director.State == RunState.Tutorial;
+            LookFor(panelCenter, 0.3f);
+            Press();
+            bool earlyPinchIgnored = director.State == RunState.Tutorial;
+            LookFor(panelCenter, 0.8f);
+            Press();
+            bool skipWorks = director.State == RunState.Running;
+            director.Scout.ScriptedWorldRay = null;
+            stats.AppendLine($"Menu and tutorial: booted to menu {bootedToMenu}, tutorial ran {tutorialSeconds:0.00} s, world moved during menu/tutorial {frozenDistance:0.00} m");
+
+            director.tutorialEachRun = false;
+            director.autopilot = true;
+
             Phase("Normal driving", AutopilotMode.Normal, 150f, null);
             int normalEnd = director.EventLog.Count;
             Phase("No steering", AutopilotMode.NoSteering, 45f, null);
@@ -352,6 +442,16 @@ namespace LastLight.EditorTools
             sb.AppendLine();
             sb.AppendLine("Feature checks:");
             void Check(string label, bool ok) => sb.AppendLine($"  {(ok ? "PASS" : "FAIL")}  {label}");
+            Check("Game boots to the start menu", bootedToMenu);
+            Check("Looking at How to Play focuses it", howFocused);
+            Check("Pinching How to Play opens the tutorial, which returns to the menu", howOpened && howReturned);
+            Check("Looking at Start Run and pinching starts the tutorial", startFocused && tutorialBeforeRun);
+            Check($"Tutorial lasts 5 s, then the run starts ({tutorialSeconds:0.00} s)", runStartedAfterTutorial && Mathf.Abs(tutorialSeconds - TutorialPanel.Duration) < 0.1f && worldMovesAfterTutorial);
+            Check($"World stays frozen during the menu and tutorial ({frozenDistance:0.00} m moved)", frozenDistance == 0f);
+            Check("A retry shows the tutorial again", retryShowsTutorial);
+            Check("A fresh pinch skips the tutorial, but not in its first 0.8 s", earlyPinchIgnored && skipWorks);
+            Check("Tutorial hand pinches and slides the jeep left, then right", TutorialPanel.PinchedAt(2f) && !TutorialPanel.PinchedAt(0.3f)
+                && TutorialPanel.JeepOffsetAt(2f) < -50f && TutorialPanel.JeepOffsetAt(3.6f) > 50f && Mathf.Abs(TutorialPanel.JeepOffsetAt(4.9f)) < 1f);
             Check("Coins collected by driving through them", count("Coin collected") > 0);
             Check("Coins never respond to gaze", coinFramesStaredAt == 0);
             Check($"Few powerups early ({earlyPowerups} in the first 300 m)", earlyPowerups <= 3);
