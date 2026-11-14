@@ -23,20 +23,40 @@ namespace LastLight
         public bool dragging;           // a hand holds the beacon
         public bool scraping;           // pressed against a road edge
         public bool trapped;            // ran into a dead-end wall
-        public bool shield;
+        public const float ShieldSeconds = 10f;
+        public float shieldTime;        // seconds of shield left; while it lasts nothing can hurt or slow the jeep
+        /// <summary>True while shielded. Setting it true tops the shield up to full; false drops it.</summary>
+        public bool shield
+        {
+            get => shieldTime > 0f;
+            set => shieldTime = value ? Mathf.Max(shieldTime, ShieldSeconds) : 0f;
+        }
         public bool falling;            // went over a cliff edge
         public int branch;              // -1 or +1 while committed to a side of a split road
         public float boostOffset;       // how far forward along the disk the car currently sits
         public float lastDrift;         // sideways push from the curve this frame
         public float screenOffset;      // where the road centre at the car sits on the disk
+        public float acid;              // seconds of acid slow left, drives the goo on the body
+        public float invulnerable;      // seconds of respawn grace left; the body blinks meanwhile
 
         float xVel, boostVel;
         float fallY, fallVelocity, fallTilt;
         readonly Transform root;
         readonly Transform body;
+        readonly MeshFilter bodyFilter;
+        readonly MeshRenderer bodyRenderer;
         readonly GameObject shieldOrb;
+        readonly MeshRenderer goo;
+        readonly MaterialPropertyBlock gooBlock = new MaterialPropertyBlock();
+        static readonly int TintId = Shader.PropertyToID("_Tint");
 
         public Transform Root => root;
+        /// <summary>The visible body. Gear such as the turret and shovel mounts here, so it follows the body's lean.</summary>
+        public Transform Body => body;
+        public int Model { get; private set; }
+        public int ModelColor { get; private set; }
+        public float RoofY => VehicleCatalog.All[Model].roofY;
+        public float FrontZ => VehicleCatalog.All[Model].frontZ;
         public bool Stalled => stallTimer > 0f || trapped;
         public float Z => Diorama.CarZ + boostOffset;
         public float ScreenX => x + screenOffset;
@@ -48,29 +68,49 @@ namespace LastLight
             go.transform.SetParent(parent, false);
             root = go.transform;
 
-            var mb = new MeshBuilder();
-            // Body, cabin, roof rack, wheels, lamps. Facing +Z.
-            mb.Box(new Vector3(0f, 0.55f, 0f), new Vector3(1.4f, 0.6f, 2.6f), Palette.Ochre);
-            mb.Box(new Vector3(0f, 1.05f, -0.25f), new Vector3(1.25f, 0.5f, 1.4f), Palette.Ochre * 0.95f);
-            mb.Box(new Vector3(0f, 1.08f, 0.47f), new Vector3(1.15f, 0.4f, 0.06f), Palette.Cabin);
-            mb.Box(new Vector3(0f, 1.36f, -0.25f), new Vector3(1.1f, 0.08f, 1.2f), Palette.Cabin);
-            for (int i = 0; i < 4; i++)
-            {
-                float wx = (i % 2 == 0 ? -1f : 1f) * 0.72f;
-                float wz = (i < 2 ? -1f : 1f) * 0.85f;
-                mb.Box(new Vector3(wx, 0.32f, wz), new Vector3(0.28f, 0.62f, 0.62f), Palette.Tyre);
-            }
-            mb.Box(new Vector3(0f, 0.55f, -1.36f), new Vector3(0.5f, 0.5f, 0.12f), Palette.Tyre); // spare tyre
-            mb.Box(new Vector3(-0.45f, 0.62f, 1.31f), new Vector3(0.28f, 0.18f, 0.04f), Palette.Lamp * 3f);
-            mb.Box(new Vector3(0.45f, 0.62f, 1.31f), new Vector3(0.28f, 0.18f, 0.04f), Palette.Lamp * 3f);
-            mb.Box(new Vector3(-0.55f, 0.6f, -1.31f), new Vector3(0.18f, 0.14f, 0.04f), Palette.Tail * 2f);
-            mb.Box(new Vector3(0.55f, 0.6f, -1.31f), new Vector3(0.18f, 0.14f, 0.04f), Palette.Tail * 2f);
-            body = MeshBuilder.Spawn("Body", root, mb.ToMesh("LL_Jeep"), mat).transform;
+            // Body, cabin, roof rack, wheels, lamps, facing +Z. The garage can swap in another model.
+            bodyRenderer = MeshBuilder.Spawn("Body", root, VehicleCatalog.GetMesh(0, 0), mat);
+            body = bodyRenderer.transform;
+            bodyFilter = bodyRenderer.GetComponent<MeshFilter>();
 
-            mb.Clear();
+            var mb = new MeshBuilder();
             mb.Orb(new Vector3(0f, 0.8f, 0f), 2.1f, new Color(0.25f, 0.6f, 1f, 0.28f));
             shieldOrb = MeshBuilder.Spawn("Shield", root, mb.ToMesh("LL_ShieldOrb"), glowMat).gameObject;
             shieldOrb.SetActive(false);
+
+            // Acid goo dripping over the hood and roof while the jeep is slowed.
+            mb.Clear();
+            var rng = new System.Random(5);
+            for (int i = 0; i < 9; i++)
+            {
+                var p = new Vector3(((float)rng.NextDouble() - 0.5f) * 1.2f, 1.15f + (float)rng.NextDouble() * 0.45f, ((float)rng.NextDouble() - 0.4f) * 2.2f);
+                mb.Orb(p, 0.14f + (float)rng.NextDouble() * 0.14f, new Color(0.6f, 1f, 0.2f, 0.9f));
+            }
+            goo = MeshBuilder.Spawn("Acid Goo", body, mb.ToMesh("LL_AcidGoo"), glowMat);
+            goo.gameObject.SetActive(false);
+        }
+
+        /// <summary>Shows a vehicle from the garage in one of its colours.</summary>
+        public void SetModel(int vehicle, int color)
+        {
+            Model = Mathf.Clamp(vehicle, 0, VehicleCatalog.Count - 1);
+            ModelColor = color;
+            bodyFilter.sharedMesh = VehicleCatalog.GetMesh(Model, color);
+        }
+
+        /// <summary>Puts a wrecked, trapped or fallen jeep back on its wheels for a respawn.</summary>
+        public void Revive(float roadX)
+        {
+            falling = false;
+            fallY = fallVelocity = fallTilt = 0f;
+            body.gameObject.SetActive(true);
+            trapped = false;
+            scraping = false;
+            stallTimer = 0f;
+            hitFlash = 0f;
+            acid = 0f;
+            x = targetX = roadX;
+            xVel = 0f;
         }
 
         public void Reset()
@@ -89,6 +129,8 @@ namespace LastLight
             falling = false;
             fallY = fallVelocity = fallTilt = 0f;
             body.gameObject.SetActive(true);
+            acid = 0f;
+            invulnerable = 0f;
             branch = 0;
             boostOffset = 0f;
             boostVel = 0f;
@@ -116,7 +158,22 @@ namespace LastLight
             boostOffset = Mathf.SmoothDamp(boostOffset, boosting ? BoostForward : 0f, ref boostVel, 0.7f, 30f, Mathf.Max(dt, 1e-4f));
             if (stallTimer > 0f) stallTimer -= dt;
             if (hitFlash > 0f) hitFlash -= dt;
-            if (!falling && shieldOrb.activeSelf != shield) shieldOrb.SetActive(shield);
+            if (shieldTime > 0f) shieldTime = Mathf.Max(0f, shieldTime - dt);
+            // The bubble flickers through its last two seconds.
+            bool showOrb = shield && (shieldTime > 2f || Mathf.Repeat(time * 6f, 1f) > 0.3f);
+            if (!falling && shieldOrb.activeSelf != showOrb) shieldOrb.SetActive(showOrb);
+            if (acid > 0f) acid -= dt;
+            if (invulnerable > 0f) invulnerable -= dt;
+            bool showGoo = acid > 0f && !falling;
+            if (goo.gameObject.activeSelf != showGoo) goo.gameObject.SetActive(showGoo);
+            if (showGoo)
+            {
+                Color c = Palette.Acid; c.a = Mathf.Clamp01(acid / 0.4f) * (0.75f + 0.25f * Mathf.Sin(time * 9f));
+                gooBlock.SetColor(TintId, c);
+                goo.SetPropertyBlock(gooBlock);
+            }
+            // Respawn grace: the body blinks until it's over.
+            bodyRenderer.enabled = invulnerable <= 0f || Mathf.Repeat(time * 8f, 1f) > 0.35f;
             Place(time, slope);
         }
 

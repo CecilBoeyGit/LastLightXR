@@ -5,6 +5,9 @@ namespace LastLight
 {
     public enum ChunkType { Quiet, Blocked1, Blocked2, Rockfall, Fork, Cliff }
 
+    /// <summary>How far into a run: early under 300 m, medium to 700 m, late after that.</summary>
+    public enum GameStage { Early, Medium, Late }
+
     /// <summary>One authored, seeded stretch of road. Once generated it never rerolls.</summary>
     public class Chunk
     {
@@ -15,6 +18,7 @@ namespace LastLight
         public Transform root;
         public readonly List<Hazard> hazards = new List<Hazard>();
         public readonly List<Pickup> pickups = new List<Pickup>();
+        public readonly List<ShooterZombie> shooters = new List<ShooterZombie>();
         public bool rockfallTriggered;
         public Mesh terrainMesh;
     }
@@ -69,15 +73,31 @@ namespace LastLight
         const float NarrowestCliffHalfWidth = 1.25f;
         const float FallTolerance = 0.25f;      // how far past the edge the jeep's centre can go before it drops
         const int FirstPowerupChunk = 10;
+        public const float MediumStageFrom = 300f;
+        public const float LateStageFrom = 700f;
+        public static readonly int FirstShooterChunk = Mathf.CeilToInt(MediumStageFrom / ChunkLength);
+        static readonly int RampEndChunk = Mathf.CeilToInt(1100f / ChunkLength);    // spitters reach full strength here
+
+        public static GameStage StageAt(float s) => s >= LateStageFrom ? GameStage.Late : s >= MediumStageFrom ? GameStage.Medium : GameStage.Early;
 
         public readonly List<Chunk> chunks = new List<Chunk>();
         public readonly List<Hazard> hazards = new List<Hazard>();
         public readonly List<Pickup> pickups = new List<Pickup>();
         public readonly List<Fork> forks = new List<Fork>();
         public readonly List<CliffRun> cliffs = new List<CliffRun>();
+        public readonly List<ShooterZombie> shooters = new List<ShooterZombie>();
 
         /// <summary>Powerups generated in the first 300 m of this run. For tests.</summary>
         public int EarlyPowerups { get; private set; }
+
+        /// <summary>Shooter zombies generated before the medium stage. Must stay zero. For tests.</summary>
+        public int EarlyShooters { get; private set; }
+        public int ShootersSpawned { get; private set; }
+        /// <summary>Travel distance of every shooter generated this run, in order. For tests.</summary>
+        public readonly List<float> ShooterSpawnS = new List<float>();
+        /// <summary>Distance of the guaranteed shield placed before the first shooters, or -1. For tests.</summary>
+        public float GuaranteedShieldS { get; private set; } = -1f;
+        public int TurretsSpawnedEarly { get; private set; }
 
         readonly Transform parent;
         readonly Material terrainMat, pickupMat;
@@ -121,6 +141,14 @@ namespace LastLight
 
         /// <summary>Sideways change of the road per unit travelled. Positive bends toward +X.</summary>
         public float Slope(float s) => (Center(s + 0.5f) - Center(s - 0.5f));
+
+        /// <summary>The generated chunk that holds travel distance s, if any.</summary>
+        public Chunk ChunkAt(float s)
+        {
+            for (int i = 0; i < chunks.Count; i++)
+                if (s >= chunks[i].startS && s < chunks[i].startS + ChunkLength) return chunks[i];
+            return null;
+        }
 
         public Fork ForkAt(float s)
         {
@@ -352,8 +380,13 @@ namespace LastLight
 
         // ---------- Lifecycle ----------
 
+        int nextShooterIndex;
+        System.Random shooterPlan;
+
         void ResetForkPlan()
         {
+            shooterPlan = new System.Random(seed * 977 + 11);
+            nextShooterIndex = FirstShooterChunk + shooterPlan.Next(2);
             var rng = new System.Random(seed * 131 + 3);
             nextForkIndex = 6 + rng.Next(4);
             forkUntilIndex = -1;
@@ -369,9 +402,15 @@ namespace LastLight
             chunks.Clear();
             hazards.Clear();
             pickups.Clear();
+            shooters.Clear();
             forks.Clear();
             cliffs.Clear();
             EarlyPowerups = 0;
+            EarlyShooters = 0;
+            ShootersSpawned = 0;
+            ShooterSpawnS.Clear();
+            GuaranteedShieldS = -1f;
+            TurretsSpawnedEarly = 0;
             nextIndex = 0;
             lastType = ChunkType.Quiet;
             lastWasHazard = false;
@@ -405,6 +444,7 @@ namespace LastLight
             }
             hazards.RemoveAll(h => h == null || (!h.alive && !h.gameObject.activeSelf));
             pickups.RemoveAll(p => p == null || !p.alive);
+            shooters.RemoveAll(z => z == null || !z.alive);
             forks.RemoveAll(f => f.EndS < distance - Diorama.Radius - ChunkLength * 2f);
             cliffs.RemoveAll(r => r.EndS < distance - Diorama.Radius - ChunkLength * 2f);
         }
@@ -413,6 +453,7 @@ namespace LastLight
         {
             foreach (var h in c.hazards) hazards.Remove(h);
             foreach (var p in c.pickups) pickups.Remove(p);
+            foreach (var z in c.shooters) shooters.Remove(z);
             if (c.terrainMesh != null) Object.DestroyImmediate(c.terrainMesh);
             if (c.root != null) Object.DestroyImmediate(c.root.gameObject);
         }
@@ -441,6 +482,7 @@ namespace LastLight
             if (c.type == ChunkType.Blocked1 || c.type == ChunkType.Blocked2) PlaceBlocker(c, rng);
             if (c.type == ChunkType.Fork) PlaceForkContents(c, rng);
             PlacePickups(c, rng);
+            PlaceShooters(c, rng);
 
             lastType = c.type;
             lastWasHazard = c.type != ChunkType.Quiet;
@@ -722,10 +764,84 @@ namespace LastLight
                 if (first || rng.NextDouble() < chance)
                 {
                     double r = rng.NextDouble();
-                    SpawnPowerup(c, first ? PickupKind.Booster : r < 0.4 ? PickupKind.Booster : r < 0.7 ? PickupKind.Shield : PickupKind.Flashlight, rng);
+                    SpawnPowerup(c, first ? PickupKind.Booster : PowerupKind(r, StageAt(c.startS)), rng);
                 }
             }
             if (c.index >= 1 && rng.NextDouble() < 0.75) SpawnCoinTrail(c, rng);
+            // One shield is always waiting a little before the first shooters, so there's a chance to meet them shielded.
+            if (c.index == GuaranteedShieldChunk)
+            {
+                SpawnPowerup(c, PickupKind.Shield, rng);
+                GuaranteedShieldS = c.startS;
+            }
+        }
+
+        static readonly int GuaranteedShieldChunk = FirstShooterChunk - 4;
+
+        /// <summary>
+        /// Which powerup a roll gives. The shovel is a medium-rarity find from the start through the medium
+        /// stage, less common late on. The shield is rare all run. The turret only appears from the medium
+        /// stage, when shooter zombies do.
+        /// </summary>
+        public static PickupKind PowerupKind(double r, GameStage stage)
+        {
+            switch (stage)
+            {
+                case GameStage.Early:   // booster 34%, shovel 30%, flashlight 28%, shield 8%
+                    return r < 0.34 ? PickupKind.Booster : r < 0.64 ? PickupKind.Shovel : r < 0.92 ? PickupKind.Flashlight : PickupKind.Shield;
+                case GameStage.Medium:  // booster 28%, shovel 28%, flashlight 20%, turret 16%, shield 8%
+                    return r < 0.28 ? PickupKind.Booster : r < 0.56 ? PickupKind.Shovel : r < 0.76 ? PickupKind.Flashlight
+                         : r < 0.92 ? PickupKind.Turret : PickupKind.Shield;
+                default:                // booster 30%, shovel 16%, flashlight 24%, turret 22%, shield 8%
+                    return r < 0.30 ? PickupKind.Booster : r < 0.46 ? PickupKind.Shovel : r < 0.70 ? PickupKind.Flashlight
+                         : r < 0.92 ? PickupKind.Turret : PickupKind.Shield;
+            }
+        }
+
+        /// <summary>
+        /// Shooter zombies from the medium stage on: off the road on the terrain beside it, close enough to
+        /// scout, never on the road or a cliff stretch. They ramp up slowly: the first sighting is a lone
+        /// spitter, then groups come closer together and grow from one to three as the run goes on.
+        /// Group sizes are drawn last from the chunk's generator, so everything else in the chunk stays as it was;
+        /// the spacing comes from its own seeded plan.
+        /// </summary>
+        void PlaceShooters(Chunk c, System.Random rng)
+        {
+            if (c.index < nextShooterIndex || c.type == ChunkType.Cliff) return;   // a cliff defers the group
+            float t = Mathf.Clamp01((c.index - FirstShooterChunk) / (float)(RampEndChunk - FirstShooterChunk));
+            int count = 1;
+            if (rng.NextDouble() < 0.55f * t) count++;
+            if (t > 0.75f && rng.NextDouble() < 0.4f * t) count++;
+            // About 10 chunks (120 m) between groups at first, down to 2 or 3 chunks after 1 km.
+            int gap = Mathf.RoundToInt(Mathf.Lerp(9f, 2f, t)) + shooterPlan.Next(0, 2);
+            nextShooterIndex = c.index + Mathf.Max(2, gap);
+            for (int i = 0; i < count; i++)
+            {
+                float z = 1f + (float)rng.NextDouble() * (ChunkLength - 2f);
+                float s = c.startS + z;
+                if (CliffAt(s) != null) continue;
+                float xRel = ShooterSpot(s, rng);
+                if (float.IsNaN(xRel)) continue;
+                float y = Height(xRel, s, CliffFactor(c, xRel, z));
+                var zombie = ShooterZombie.Create(c, terrainMat, new Vector3(Center(s) + xRel, y, z), rng);
+                c.shooters.Add(zombie);
+                shooters.Add(zombie);
+                ShootersSpawned++;
+                ShooterSpawnS.Add(s);
+                if (s < MediumStageFrom) EarlyShooters++;
+            }
+        }
+
+        /// <summary>A road-relative X on the terrain 2 to 7 units off the road edge, or NaN if none was found.</summary>
+        float ShooterSpot(float s, System.Random rng)
+        {
+            for (int attempt = 0; attempt < 16; attempt++)
+            {
+                float xRel = ((float)rng.NextDouble() * 2f - 1f) * 13f;
+                float dist = RoadDistance(xRel, s);
+                if (dist >= 2f && dist <= 7f) return xRel;
+            }
+            return float.NaN;
         }
 
         /// <summary>A short curving line of coins at jeep height, laid along the road to drive through.</summary>
@@ -766,6 +882,7 @@ namespace LastLight
             c.pickups.Add(p);
             pickups.Add(p);
             if (s < 300f) EarlyPowerups++;
+            if (kind == PickupKind.Turret && s < MediumStageFrom) TurretsSpawnedEarly++;
         }
 
         /// <summary>A road-relative X clearly off the road but still close enough to scout, on either side.</summary>

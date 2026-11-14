@@ -45,6 +45,16 @@ namespace LastLight
         public static readonly Color Danger = new Color(1f, 0.38f, 0.3f, 1f);
         public static readonly Color Background = Hex("#0b120f");
 
+        // Shooter zombies, acid and the new powerups.
+        public static readonly Color ShooterSkin = Hex("#9fae7a");
+        public static readonly Color ShooterSack = Hex("#6fae2a");
+        public static readonly Color ShooterRags = Hex("#4a4436");
+        public static readonly Color Acid = new Color(0.55f, 1f, 0.15f, 1f);
+        public static readonly Color TurretRed = Hex("#d6463b");
+        public static readonly Color ShovelSteel = Hex("#8d949c");
+        public static readonly Color ShovelYellow = Hex("#e8b53a");
+        public static readonly Color Metal = Hex("#55595e");
+
         // Retro comic menu palette, matched to the title splash.
         public static readonly Color UIInk = Hex("#0d1216");
         public static readonly Color UIIvory = Hex("#f1e4c4");

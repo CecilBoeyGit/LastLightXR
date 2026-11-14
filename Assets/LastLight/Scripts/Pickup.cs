@@ -2,7 +2,7 @@ using UnityEngine;
 
 namespace LastLight
 {
-    public enum PickupKind { Coin, Booster, Shield, Flashlight }
+    public enum PickupKind { Coin, Booster, Shield, Flashlight, Turret, Shovel }
 
     /// <summary>
     /// A floating pickup. Powerups sit beside the road and are collected by staring at them for 1.5 seconds.
@@ -19,7 +19,7 @@ namespace LastLight
         float spinPhase;
         Vector3 basePos;
         GameObject visual;
-        static Mesh coinMesh, boosterMesh, shieldMesh, flashlightMesh;
+        static Mesh coinMesh, boosterMesh, shieldMesh, flashlightMesh, turretMesh, shovelMesh;
 
         public const float StareSeconds = 1.5f;
         public float DwellSeconds => StareSeconds;
@@ -37,6 +37,8 @@ namespace LastLight
                 PickupKind.Booster => boosterMesh,
                 PickupKind.Shield => shieldMesh,
                 PickupKind.Flashlight => flashlightMesh,
+                PickupKind.Turret => turretMesh,
+                PickupKind.Shovel => shovelMesh,
                 _ => coinMesh
             };
             var go = new GameObject(kind.ToString());
@@ -120,6 +122,28 @@ namespace LastLight
             mb.Prism(head, 0.36f, Palette.LightBody * 1.3f);
             mb.Prism(beam, 0.08f, Palette.LightBeam);
             flashlightMesh = mb.ToMesh("LL_FlashlightIcon"); mb.Clear();
+
+            // Turret: a gun head on a base with twin barrels pointing up and right.
+            Vector2[] tBase = { P(-0.8f, -1f), P(-0.8f, -0.7f), P(0.8f, -0.7f), P(0.8f, -1f) };
+            Vector2[] tHead = { P(-0.55f, -0.7f), P(-0.55f, 0.05f), P(-0.25f, 0.3f), P(0.4f, 0.3f), P(0.55f, 0.05f), P(0.55f, -0.7f) };
+            Vector2[] barrel1 = { P(0.2f, 0.05f), P(0.85f, 0.85f), P(0.98f, 0.74f), P(0.33f, -0.06f) };
+            Vector2[] barrel2 = { P(0.0f, 0.2f), P(0.62f, 1.0f), P(0.75f, 0.9f), P(0.13f, 0.1f) };
+            mb.Prism(tBase, 0.3f, Palette.Metal * 1.4f);
+            mb.Prism(tHead, 0.26f, Palette.TurretRed);
+            mb.Prism(barrel1, 0.34f, Palette.LightBody);
+            mb.Prism(barrel2, 0.34f, Palette.LightBody * 0.85f);
+            turretMesh = mb.ToMesh("LL_TurretIcon"); mb.Clear();
+
+            // Shovel: a wide plough blade with a yellow stripe and two arms.
+            Vector2[] blade = { P(-1f, -0.15f), P(-0.9f, 0.55f), P(0.9f, 0.55f), P(1f, -0.15f), P(0.8f, -0.45f), P(-0.8f, -0.45f) };
+            Vector2[] stripe = { P(-0.86f, 0.3f), P(-0.83f, 0.45f), P(0.83f, 0.45f), P(0.86f, 0.3f) };
+            Vector2[] armL = { P(-0.5f, -0.45f), P(-0.5f, -1f), P(-0.3f, -1f), P(-0.3f, -0.45f) };
+            Vector2[] armR = { P(0.3f, -0.45f), P(0.3f, -1f), P(0.5f, -1f), P(0.5f, -0.45f) };
+            mb.Prism(blade, 0.22f, Palette.ShovelSteel * 1.3f);
+            mb.Prism(stripe, 0.3f, Palette.ShovelYellow * 1.3f);
+            mb.Prism(armL, 0.26f, Palette.Metal * 1.3f);
+            mb.Prism(armR, 0.26f, Palette.Metal * 1.3f);
+            shovelMesh = mb.ToMesh("LL_ShovelIcon"); mb.Clear();
         }
 
         static Vector2 P(float x, float y) => new Vector2(x, y);

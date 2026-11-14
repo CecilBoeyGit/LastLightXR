@@ -5,7 +5,7 @@ namespace LastLight
     /// <summary>Short procedural cues. They stand in for controller vibration and warn about off-beam danger.</summary>
     public class SoundKit
     {
-        public AudioClip grab, commit, cancel, sweep, hit, rumble, brake, gameOver, coin, powerup, scrape, shieldBreak;
+        public AudioClip grab, commit, cancel, sweep, hit, rumble, brake, gameOver, coin, powerup, scrape, shieldBreak, spit, splash, gun, smash;
         readonly AudioSource source;
 
         public SoundKit(GameObject host)
@@ -25,6 +25,10 @@ namespace LastLight
             powerup = Tone("powerup", 0.35f, 440f, 1320f, 0.35f);
             scrape = Noise("scrape", 0.22f, 0.25f, 6f);
             shieldBreak = Tone("shieldbreak", 0.3f, 900f, 200f, 0.4f);
+            spit = Tone("spit", 0.22f, 260f, 620f, 0.3f);
+            splash = Noise("splash", 0.35f, 0.4f, 5f);
+            gun = Noise("gun", 0.05f, 0.5f, 9f);
+            smash = Noise("smash", 0.4f, 0.55f, 1.5f);
         }
 
         public void Play(AudioClip clip, float volume = 1f)

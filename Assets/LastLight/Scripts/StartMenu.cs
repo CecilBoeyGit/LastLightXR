@@ -2,7 +2,7 @@ using UnityEngine;
 
 namespace LastLight
 {
-    public enum MenuAction { None, StartRun, HowToPlay }
+    public enum MenuAction { None, StartRun, Garage, HowToPlay }
 
     /// <summary>
     /// Title screen: the retro comic splash with live buttons in its dark patch below the title.
@@ -14,19 +14,20 @@ namespace LastLight
         // roughly 7-30% across and 53-83% down from the upper left.
         public const float Width = 26f;
         public const float Height = Width * 941f / 1672f;
-        static readonly Vector2 ButtonSize = new Vector2(5.8f, 1.45f);
-        static readonly Vector2[] ButtonCenters = { new Vector2(-8.2f, -1.25f), new Vector2(-8.2f, -3.0f) };
+        public const int StartIndex = 0, GarageIndex = 1, HowToIndex = 2;
+        static readonly Vector2 ButtonSize = new Vector2(5.8f, 1.38f);
+        static readonly Vector2[] ButtonCenters = { new Vector2(-8.2f, -1.0f), new Vector2(-8.2f, -2.55f), new Vector2(-8.2f, -4.1f) };
         const float FocusPadding = 0.3f;     // extra hit margin around a button
         const float KeepFocusPadding = 0.7f; // larger margin once focused, so eye jitter doesn't drop it
         const float FocusGrace = 0.35f;      // seconds focus survives a glance away or a blink
 
         public readonly Transform root;
         readonly UISprite splash, cursor, hint;
-        readonly UISprite[] buttons = new UISprite[2];
-        readonly Texture2D[] normal = new Texture2D[2], focusedTex = new Texture2D[2];
+        readonly UISprite[] buttons = new UISprite[3];
+        readonly Texture2D[] normal = new Texture2D[3], focusedTex = new Texture2D[3];
         float lostTimer, time;
 
-        /// <summary>Index of the focused button: 0 Start Run, 1 How to Play, -1 none.</summary>
+        /// <summary>Index of the focused button: 0 Start Run, 1 Garage, 2 How to Play, -1 none.</summary>
         public int Focused { get; private set; } = -1;
 
         public StartMenu(Transform parent, Material alphaMat, Material addMat)
@@ -39,8 +40,8 @@ namespace LastLight
             new UISprite("Frame Ivory", root, white, new Vector2(Width + 0.4f, Height + 0.4f), alphaMat, 1) { Color = Palette.UIIvory };
             splash = new UISprite("Splash", root, UISprite.Load("splash"), new Vector2(Width, Height), alphaMat, 2);
 
-            string[] names = { "start", "howto" };
-            for (int i = 0; i < 2; i++)
+            string[] names = { "start", "garage", "howto" };
+            for (int i = 0; i < names.Length; i++)
             {
                 normal[i] = UISprite.Load("btn_" + names[i]);
                 focusedTex[i] = UISprite.Load("btn_" + names[i] + "_focus");
@@ -48,7 +49,7 @@ namespace LastLight
             }
             hint = new UISprite("Hint", root, UISprite.Load("menu_hint"), new Vector2(7.4f, 7.4f * 96f / 1024f), alphaMat, 3)
             {
-                Position = new Vector2(-8.2f, -4.45f)
+                Position = new Vector2(-8.2f, -5.3f)
             };
             cursor = new UISprite("Gaze Cursor", root, UISprite.Load("spot"), new Vector2(0.9f, 0.9f), addMat, 6)
             {
@@ -108,7 +109,12 @@ namespace LastLight
             if (onPanel) cursor.Position = point;
 
             if (!select || Focused < 0) return MenuAction.None;
-            return Focused == 0 ? MenuAction.StartRun : MenuAction.HowToPlay;
+            return Focused switch
+            {
+                StartIndex => MenuAction.StartRun,
+                GarageIndex => MenuAction.Garage,
+                _ => MenuAction.HowToPlay
+            };
         }
 
         /// <summary>Intersects a world ray with the panel plane; the point is in panel units.</summary>
