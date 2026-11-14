@@ -162,22 +162,26 @@
       "prompt": null,
       "input_images": {
         "front": "Tools/Tripo/inputs/zombie_spitter/zombie_spitter_front.png",
-        "side": "Tools/Tripo/inputs/zombie_spitter/zombie_spitter_side.png",
+        "right": "Tools/Tripo/inputs/zombie_spitter/zombie_spitter_side.png",
         "back": "Tools/Tripo/inputs/zombie_spitter/zombie_spitter_back.png"
       },
+      "model": "web: HD Model, H3.1 Best Quality, multi-view; Retopo quad 900 (Smart Mesh P1.0)",
       "face_limit": 1800,
       "texture_size": 1024,
       "target_size_m": { "height": 0.05 },
       "rig": true,
-      "rig_type": "humanoid",
-      "animations": ["idle", "spit/attack"],
+      "rig_type": "humanoid (Mixamo skeleton, 65 bones)",
+      "animations": ["idle", "spit (AI text-to-motion 'Zombie Lunge Attack', 3 s)"],
       "unity": {
         "prefab": "LL_Zombie_Spitter",
         "replaces_placeholder": "ShooterZombie in Assets/LastLight/Scripts/Shooters.cs",
         "max_texture_size": 512,
-        "material": "LastLight/DioramaTextured"
+        "material": "LL_Zombie_Spitter.mat (LastLight/DioramaTextured, _BaseMap = Textures/LL_Zombie_Spitter_BaseColor.png)",
+        "rig_import": "Animation Type Humanoid, Avatar created from this model; two embedded takes, idle.001 (loop) and the spit take (its name is the start of the motion prompt; rename the clip to 'spit', no loop). Both exported in place",
+        "scale": "FBX is 0.978 m tall after unit conversion, pivot at the feet; scale about 0.051 for 0.05 m",
+        "collider": "CapsuleCollider on prefab root"
       },
-      "notes": "Pending: generate on studio.tripo3d.ai the same way as zombie_runner (web credits only; the CLI must skip it)."
+      "notes": "Spitter zombie from Cecil's model sheet (yellow bile sac). Generated on studio.tripo3d.ai (web credits only; the CLI must skip it). Run record in Tools/Tripo/runs/zombie_spitter/web/web.json."
     },
     {
       "id": "pine_a",
