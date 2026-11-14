@@ -9,6 +9,7 @@ namespace LastLight
     public class Horde
     {
         const float CrowdHalfWidth = 4.3f;
+        const float WalkerHeight = 1.75f;       // the box walkers' height; the Tripo runner is scaled to match
 
         /// <summary>How far any walker has strayed outside the road. Negative means all stayed on it. For tests.</summary>
         public float WorstRoadDistance { get; set; } = float.MinValue;
@@ -17,8 +18,11 @@ namespace LastLight
         readonly Transform[] walkers;
         readonly Vector3[] offsets;
         readonly float[] phase;
+        readonly ZombieRig[] rigs;              // null when the Tripo runner isn't configured
 
         public Transform Root => root;
+        /// <summary>True when the walkers are the rigged Tripo runner rather than box meshes. For tests.</summary>
+        public bool UsesModels => rigs != null;
 
         public Horde(Transform parent, Material mat, int count, int seed)
         {
@@ -26,9 +30,13 @@ namespace LastLight
             root.SetParent(parent, false);
 
             var rng = new System.Random(seed);
+            var models = ZombieModels.Active;
+            if (models != null && models.HasRunner)
+                rigs = new ZombieRig[count];
+            var tintRng = new System.Random(seed + 7);   // separate, so the crowd layout matches the box version
             Color[] shirts = { Palette.Shirt1, Palette.Shirt2, Palette.Shirt3 };
             var meshes = new Mesh[3];
-            for (int v = 0; v < 3; v++)
+            for (int v = 0; v < 3 && rigs == null; v++)
             {
                 var mb = new MeshBuilder();
                 Color shirt = shirts[v];
@@ -47,8 +55,16 @@ namespace LastLight
             phase = new float[count];
             for (int i = 0; i < count; i++)
             {
-                var r = MeshBuilder.Spawn("Walker " + i, root, meshes[i % 3], mat);
-                walkers[i] = r.transform;
+                if (rigs != null)
+                {
+                    walkers[i] = new GameObject("Walker " + i).transform;
+                    walkers[i].SetParent(root, false);
+                    rigs[i] = ZombieRig.Spawn(models.runnerPrefab, models.runnerMaterial, walkers[i], WalkerHeight, models.runnerHeight, models.runnerRun);
+                    // A little variety in skin and cloth brightness so the crowd doesn't read as clones.
+                    float b = 0.82f + (float)tintRng.NextDouble() * 0.3f;
+                    rigs[i].SetTint(new Color(b, b * (0.96f + (float)tintRng.NextDouble() * 0.08f), b, 1f));
+                }
+                else walkers[i] = MeshBuilder.Spawn("Walker " + i, root, meshes[i % 3], mat).transform;
                 float row = i / 6;
                 offsets[i] = new Vector3(((float)rng.NextDouble() - 0.5f) * 8.6f, 0f, -row * 1.3f - (float)rng.NextDouble() * 0.9f);
                 phase[i] = (float)rng.NextDouble() * 10f;
@@ -84,7 +100,17 @@ namespace LastLight
                 walkers[i].localPosition = o;
 
                 float bend = Mathf.Atan(track.Slope(s)) * Mathf.Rad2Deg;
-                walkers[i].localRotation = Quaternion.Euler(8f + Mathf.Sin(t) * 6f, bend + Mathf.Sin(t * 0.3f) * 14f, Mathf.Sin(t) * 7f);
+                if (rigs != null)
+                {
+                    // The run clip carries the bob and lean; only weave a little on top of it.
+                    o.y = 0f;
+                    walkers[i].localPosition = o;
+                    walkers[i].localRotation = Quaternion.Euler(3f, bend + Mathf.Sin(t * 0.3f) * 10f, Mathf.Sin(t * 0.5f) * 3f);
+                    // Each walker runs at its own cadence; the clip is 1.25 s, which matches the box bob at full pace.
+                    float cadence = 0.9f + (i % 4) * 0.06f;
+                    rigs[i].Pose(0, time * cadence * pace + phase[i]);
+                }
+                else walkers[i].localRotation = Quaternion.Euler(8f + Mathf.Sin(t) * 6f, bend + Mathf.Sin(t * 0.3f) * 14f, Mathf.Sin(t) * 7f);
             }
         }
     }

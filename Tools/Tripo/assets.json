@@ -148,7 +148,7 @@
         "replaces_placeholder": "box-mesh horde walkers in Assets/LastLight/Scripts/Horde.cs",
         "max_texture_size": 512,
         "material": "LL_Zombie_Runner.mat (LastLight/DioramaTextured, _BaseMap = Textures/LL_Zombie_Runner_BaseColor.png)",
-        "rig_import": "Animation Type Humanoid, Avatar created from this model; clip run.001 is embedded in LL_Zombie_Runner.fbx, exported in place (Loop Time on)",
+        "rig_import": "Set by Assets/LastLight/Editor/ZombieModelSetup.cs: Generic rig, no imported materials, embedded take renamed run (loop). Played from Resources/LastLightModels/ZombieModels.asset by ZombieRig (Playables, no controller); sized to the 1.75-unit box walkers in Horde.cs",
         "scale": "FBX is 0.977 m tall after unit conversion, pivot at the feet; scale about 0.046 for 0.045 m",
         "collider": "CapsuleCollider on prefab root"
       },
@@ -177,7 +177,7 @@
         "replaces_placeholder": "ShooterZombie in Assets/LastLight/Scripts/Shooters.cs",
         "max_texture_size": 512,
         "material": "LL_Zombie_Spitter.mat (LastLight/DioramaTextured, _BaseMap = Textures/LL_Zombie_Spitter_BaseColor.png)",
-        "rig_import": "Animation Type Humanoid, Avatar created from this model; two embedded takes, idle.001 (loop) and the spit take (its name is the start of the motion prompt; rename the clip to 'spit', no loop). Both exported in place",
+        "rig_import": "Set by Assets/LastLight/Editor/ZombieModelSetup.cs: Generic rig, takes renamed idle (loop) and spit (no loop). ShooterZombie plays spit so its lunge peaks (measured apex ~1.17 s) as the glob launches",
         "scale": "FBX is 0.978 m tall after unit conversion, pivot at the feet; scale about 0.051 for 0.05 m",
         "collider": "CapsuleCollider on prefab root"
       },

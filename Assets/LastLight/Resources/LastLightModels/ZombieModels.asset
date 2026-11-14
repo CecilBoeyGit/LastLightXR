@@ -1,0 +1,24 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 89af043f78fb347499c3dba6622131e0, type: 3}
+  m_Name: ZombieModels
+  m_EditorClassIdentifier: LastLight::LastLight.ZombieModels
+  runnerPrefab: {fileID: 919132149155446097, guid: 97d5bea69bc8e44ab933beaf851acd97, type: 3}
+  runnerMaterial: {fileID: 2100000, guid: 54c83daf49364b658f7e4400995d671b, type: 2}
+  runnerRun: {fileID: 6144204302869600065, guid: 97d5bea69bc8e44ab933beaf851acd97, type: 3}
+  runnerHeight: 0.8366094
+  spitterPrefab: {fileID: 919132149155446097, guid: d02d63175bb9d4914b34b96e2a9bac93, type: 3}
+  spitterMaterial: {fileID: 2100000, guid: a5e0b5e874db48bcb9a838eaf0029c81, type: 2}
+  spitterIdle: {fileID: 8406360129791286164, guid: d02d63175bb9d4914b34b96e2a9bac93, type: 3}
+  spitterSpit: {fileID: -6997964950517482833, guid: d02d63175bb9d4914b34b96e2a9bac93, type: 3}
+  spitterHeight: 0.97919965
+  spitApexTime: 1.1666669

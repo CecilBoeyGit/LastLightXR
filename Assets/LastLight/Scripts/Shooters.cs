@@ -13,6 +13,7 @@ namespace LastLight
         public const int MaxHealth = 6;
         public const float WindupSeconds = 0.55f;
         public const float MouthHeight = 1.75f;
+        const float BodyHeight = 1.8f;              // the box spitter's height; the Tripo spitter is scaled to match
 
         public static Material GlowMaterial;
 
@@ -26,6 +27,10 @@ namespace LastLight
 
         Transform body;
         MeshRenderer bodyRenderer, mouth;
+        ZombieRig rig;                              // the Tripo spitter, or null for the box mesh
+        float spitApex;                             // seconds into the spit clip where the head thrusts furthest
+        float spitT = -1f;                          // seconds into the spit clip, or -1 when idling
+        Vector3 mouthLocal = new Vector3(0f, MouthHeight, 0.35f);   // body-local, follows the head on the model
         float phase;
         static Mesh bodyMesh, mouthMesh;
         static readonly int TintId = Shader.PropertyToID("_Tint");
@@ -33,9 +38,13 @@ namespace LastLight
 
         /// <summary>Position in diorama-local units.</summary>
         public Vector3 DioramaLocal => chunk.root.localPosition + transform.localPosition;
-        public Vector3 MouthDioramaLocal => DioramaLocal + body.localRotation * new Vector3(0f, MouthHeight, 0.35f) * transform.localScale.x;
+        public Vector3 MouthDioramaLocal => DioramaLocal + body.localRotation * mouthLocal * transform.localScale.x;
         public Vector3 CenterDioramaLocal => DioramaLocal + Vector3.up * 1.1f * transform.localScale.x;
         public bool Winding => windup > 0f;
+        /// <summary>True when this spitter is the rigged Tripo model. For tests.</summary>
+        public bool UsesModel => rig != null;
+        /// <summary>How much of the spit clip is showing right now, 0 to 1. For tests.</summary>
+        public float SpitWeight { get; private set; }
 
         public static ShooterZombie Create(Chunk chunk, Material mat, Vector3 chunkLocal, System.Random rng)
         {
@@ -48,8 +57,19 @@ namespace LastLight
             z.chunk = chunk;
             z.phase = (float)rng.NextDouble() * 10f;
             z.cooldown = 0.2f + (float)rng.NextDouble() * 0.9f;
-            z.bodyRenderer = MeshBuilder.Spawn("Body", go.transform, bodyMesh, mat);
-            z.body = z.bodyRenderer.transform;
+            var models = ZombieModels.Active;
+            if (models != null && models.HasSpitter)
+            {
+                z.body = new GameObject("Body").transform;
+                z.body.SetParent(go.transform, false);
+                z.rig = ZombieRig.Spawn(models.spitterPrefab, models.spitterMaterial, z.body, BodyHeight, models.spitterHeight, models.spitterIdle, models.spitterSpit);
+                z.spitApex = Mathf.Clamp(models.spitApexTime, 0f, models.spitterSpit.length);
+            }
+            else
+            {
+                z.bodyRenderer = MeshBuilder.Spawn("Body", go.transform, bodyMesh, mat);
+                z.body = z.bodyRenderer.transform;
+            }
             if (GlowMaterial != null)
             {
                 z.mouth = MeshBuilder.Spawn("Acid Glow", z.body, mouthMesh, GlowMaterial);
@@ -65,6 +85,11 @@ namespace LastLight
         {
             Vector3 to = carLocal - DioramaLocal; to.y = 0f;
             float yaw = to.sqrMagnitude > 1e-4f ? Mathf.Atan2(to.x, to.z) * Mathf.Rad2Deg : 180f;
+            if (rig != null)
+            {
+                AnimateModel(time, dt, yaw);
+                return;
+            }
             float lean = Mathf.Sin(time * 2.1f + phase) * 5f;
             if (windup > 0f)
             {
@@ -93,6 +118,57 @@ namespace LastLight
                     mpb.Clear();
                     mpb.SetColor(TintId, c * (1f + k));
                     mouth.SetPropertyBlock(mpb);
+                    mouth.transform.localScale = Vector3.one * (0.6f + 0.6f * k + Mathf.Sin(time * 40f) * 0.08f);
+                }
+            }
+        }
+
+        /// <summary>
+        /// The Tripo spitter: idle loops; a wind-up starts the spit clip so its lunge peaks the moment the glob
+        /// launches, and the clip plays out and blends back to idle after. The acid glow rides on the head.
+        /// </summary>
+        void AnimateModel(float time, float dt, float yaw)
+        {
+            float spitLen = rig.Length(1);
+            if (windup > 0f) spitT = Mathf.Max(0f, spitApex - windup);
+            else if (spitT >= 0f)
+            {
+                spitT += dt;
+                if (spitT >= spitLen) spitT = -1f;
+            }
+            float flinch = 0f;
+            if (hitFlash > 0f)
+            {
+                hitFlash -= dt;
+                flinch = 12f;
+            }
+            body.localRotation = Quaternion.Euler(flinch, yaw, 0f);
+
+            float w = 0f;
+            if (spitT >= 0f)
+            {
+                float start = Mathf.Max(0f, spitApex - WindupSeconds);
+                w = Mathf.Clamp01((spitT - start) / 0.12f + (windup > 0f ? 0.25f : 0f)) * Mathf.Clamp01((spitLen - spitT) / 0.35f);
+            }
+            SpitWeight = w;
+            rig.Pose(0, time + phase, 1, spitT, w);
+            rig.SetTint(hitFlash > 0f ? new Color(2.2f, 1.6f, 1.4f, 1f) : Color.white);
+
+            if (rig.Head != null)
+                mouthLocal = body.InverseTransformPoint(rig.Head.position) + new Vector3(0f, 0.06f, 0.2f);
+
+            if (mouth != null)
+            {
+                bool show = windup > 0f;
+                if (mouth.gameObject.activeSelf != show) mouth.gameObject.SetActive(show);
+                if (show)
+                {
+                    float k = 1f - windup / WindupSeconds;
+                    Color c = Palette.Acid; c.a = 0.4f + 0.6f * k;
+                    mpb.Clear();
+                    mpb.SetColor(TintId, c * (1f + k));
+                    mouth.SetPropertyBlock(mpb);
+                    mouth.transform.localPosition = mouthLocal;
                     mouth.transform.localScale = Vector3.one * (0.6f + 0.6f * k + Mathf.Sin(time * 40f) * 0.08f);
                 }
             }

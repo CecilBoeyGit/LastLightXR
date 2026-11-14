@@ -18,7 +18,7 @@ namespace LastLight
         class Piece
         {
             public Transform t;
-            public MeshRenderer r;
+            public Renderer r;
             public Vector3 vel, spinAxis;
             public float spin, age, life, fadeTime, baseScale;
             public bool glow, bounce;
@@ -124,7 +124,7 @@ namespace LastLight
         public void FadeOut(Transform t, float seconds, Vector3 velocity, float spin = 90f)
         {
             if (t == null) return;
-            var r = t.GetComponentInChildren<MeshRenderer>();
+            var r = t.GetComponentInChildren<Renderer>();
             pieces.Add(new Piece
             {
                 t = t,
@@ -176,7 +176,7 @@ namespace LastLight
                 {
                     mpb.Clear();
                     mpb.SetFloat(FadeId, fade);
-                    foreach (var rr in p.t.GetComponentsInChildren<MeshRenderer>()) rr.SetPropertyBlock(mpb);
+                    foreach (var rr in p.t.GetComponentsInChildren<Renderer>()) rr.SetPropertyBlock(mpb);
                     if (fade < 0.4f) p.t.localScale = Vector3.one * p.baseScale * (0.5f + 0.5f * fade / 0.4f);
                 }
             }

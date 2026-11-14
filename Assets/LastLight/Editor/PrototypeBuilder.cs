@@ -34,6 +34,7 @@ namespace LastLight.EditorTools
             // Keeps the HUD text shader in builds; the rim gauge labels use it to draw over the terrain.
             MakeMaterial("LL_UIText", "LastLight/Text", m => m.SetColor("_Color", Color.white), UIDir);
             ConfigureUITextures();
+            ZombieModelSetup.Configure();   // Tripo horde runner and spitter, loaded from Resources at runtime
 
             var scene = EditorSceneManager.OpenScene(TemplateScene, OpenSceneMode.Single);
 
@@ -285,6 +286,8 @@ namespace LastLight.EditorTools
             bool gaugesSane = true;
             string debrisName = "";
             float minShooterOffRoad = float.MaxValue;
+            float spitWeightAtLaunch = -1f;     // lowest spit-clip weight seen just before a glob launches
+            bool spittersUseModels = true, anySpitter = false;
 
             void Shot(string name)
             {
@@ -321,8 +324,14 @@ namespace LastLight.EditorTools
                     minShooterOffRoad = Mathf.Min(minShooterOffRoad, director.Track.RoadDistance(director.RoadRelativeX(pos), s));
                     if (Diorama.InsideDisk(pos) && pos.z > director.Car.Z + 3f) Shot("shooter_on_disk");
                     if (z.Winding && !Diorama.InsideDisk(pos)) Shot("shooter_spitting");
+                    anySpitter = true;
+                    if (!z.UsesModel) spittersUseModels = false;
+                    if (z.Winding && z.windup < 0.06f)
+                        spitWeightAtLaunch = spitWeightAtLaunch < 0f ? z.SpitWeight : Mathf.Min(spitWeightAtLaunch, z.SpitWeight);
+                    if (Diorama.InsideDisk(pos) && pos.z > director.Car.Z + 3f) Model("spitter", z.transform.position, z.Winding ? "spitter_winding" : null, -1f);
                 }
                 if (director.Shooters.InFlight > 0) Shot("acid_in_flight");
+                if (director.State == RunState.Running && director.Distance > 40f) Model("horde", director.Crowd.Root.position, null, 1f);
                 if (director.AcidTime > 0.5f) Shot("acid_hit");
                 if (director.Fx.ActiveCount > 8 && director.State == RunState.Running) Shot("shatter");
                 if (director.Turret.Active && director.Turret.Target != null && director.Turret.ShotsFired > 3) Shot("turret_firing");
@@ -346,6 +355,16 @@ namespace LastLight.EditorTools
                     if (p.Visible && Diorama.InsideDisk(pos)) powerupFramesOnDisk++;
                     if (pos.z < director.Car.Z - 1f) powerupFramesBehindJeep++;
                 }
+            }
+
+            // A close look at a Tripo zombie model: from in front, at its own height.
+            void Model(string name, Vector3 at, string altName, float facing)
+            {
+                if (altName != null) name = altName;
+                if (!taken.Add("model_" + name)) return;
+                float u = d.lossyScale.x;   // one game unit in world metres
+                Vector3 eye = at + d.rotation * new Vector3(1.6f, 2.2f, 5.5f * facing) * u;
+                Render(cam, rt, eye, at + d.rotation * new Vector3(0f, 1.1f, -1.5f * facing) * u, Path.Combine(outDir, $"model_{name}.png"));
             }
 
             // A close look at the jeep from just behind and above it, for gear and debris.
@@ -830,6 +849,9 @@ namespace LastLight.EditorTools
             Check($"Shield ploughs through rocks and trees with no harm ({shieldSmashes} smashes)", shieldSmashes > 0 && shieldNoHarm);
             Check("Shield wears off after 10 s", shieldTimed);
             Check("Rim gauges replace the text readout and stay in range", gaugesSane && GameObject.Find("HUD") == null && director.Gauges != null);
+            Check("Horde walkers are the rigged Tripo runner", director.Crowd.UsesModels);
+            Check($"Spitters are the rigged Tripo model, lunging as the acid launches (spit clip weight {spitWeightAtLaunch:0.00} at launch)",
+                anySpitter && spittersUseModels && spitWeightAtLaunch > 0.8f);
             sb.AppendLine();
             sb.AppendLine($"Splits generated: {count("has a dead end")} with a dead end, {count("has an obstacle branch")} with an obstacle branch");
             sb.AppendLine($"Counts: coins {count("Coin collected")}, boosters {count("Booster collected")}, shields {count("Shield collected")}, flashlights {count("Flashlight collected")}, shield saves {count("Shield absorbed") + count("Shield stopped")}, scrapes {count("Scraping")}, sweeps {count("Swept boulder")}, damage events {count(", health ")}, splits {count("split:")}");
