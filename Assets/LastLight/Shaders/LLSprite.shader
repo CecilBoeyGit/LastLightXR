@@ -9,6 +9,7 @@ Shader "LastLight/Sprite"
         _Color ("Color", Color) = (1,1,1,1)
         [HideInInspector] _SrcBlend ("Src Blend", Float) = 5   // SrcAlpha
         [HideInInspector] _DstBlend ("Dst Blend", Float) = 10  // OneMinusSrcAlpha
+        [HideInInspector] _ZTest ("ZTest", Float) = 4          // LessEqual; 8 (Always) draws over the scene
     }
     SubShader
     {
@@ -19,6 +20,7 @@ Shader "LastLight/Sprite"
             Tags { "LightMode"="UniversalForward" }
             Blend [_SrcBlend] [_DstBlend], One OneMinusSrcAlpha
             ZWrite Off
+            ZTest [_ZTest]
             Cull Off
             HLSLPROGRAM
             #pragma vertex vert

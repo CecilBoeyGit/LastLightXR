@@ -9,6 +9,7 @@ Shader "LastLight/Diorama"
         _Tint ("Tint", Color) = (1,1,1,1)
         _Emission ("Emission", Float) = 0
         _ClipToDisk ("Clip To Disk (0/1)", Float) = 1
+        _Fade ("Fade (1 solid, 0 gone)", Float) = 1
     }
     SubShader
     {
@@ -29,6 +30,7 @@ Shader "LastLight/Diorama"
                 half4 _Tint;
                 half _Emission;
                 half _ClipToDisk;
+                half _Fade;
             CBUFFER_END
 
             // Globals set by Diorama.cs every frame.
@@ -72,9 +74,18 @@ Shader "LastLight/Diorama"
                 return o;
             }
 
+            // 4x4 ordered dither threshold, so fading pieces dissolve while staying opaque and sorted.
+            float Bayer4(float2 px)
+            {
+                const float m[16] = { 0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5 };
+                int2 p = int2(fmod(px, 4.0));
+                return (m[p.y * 4 + p.x] + 0.5) / 16.0;
+            }
+
             half4 frag (Varyings i) : SV_Target
             {
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
+                if (_Fade < 0.999 && Bayer4(floor(i.positionCS.xy)) >= _Fade) discard;
 
                 float2 toDisk = i.positionWS.xz - _LL_Disk.xz;
                 float diskDist = length(toDisk);

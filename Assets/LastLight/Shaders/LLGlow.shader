@@ -6,6 +6,7 @@ Shader "LastLight/Glow"
     {
         _Tint ("Tint", Color) = (1,0.7,0.3,1)
         _Intensity ("Intensity", Float) = 1
+        [HideInInspector] _ZTest ("ZTest", Float) = 4   // LessEqual; 8 (Always) draws over the scene
     }
     SubShader
     {
@@ -16,6 +17,7 @@ Shader "LastLight/Glow"
             Tags { "LightMode"="UniversalForward" }
             Blend SrcAlpha One
             ZWrite Off
+            ZTest [_ZTest]
             Cull Off
             HLSLPROGRAM
             #pragma vertex vert
