@@ -126,6 +126,60 @@
       "notes": "Distinct taller silhouette so players can tell variants apart."
     },
     {
+      "id": "zombie_runner",
+      "enabled": false,
+      "source": "web",
+      "category": "character",
+      "prompt": null,
+      "input_images": {
+        "front": "Tools/Tripo/inputs/zombie_runner/zombie_runner_front.png",
+        "right": "Tools/Tripo/inputs/zombie_runner/zombie_runner_side.png",
+        "back": "Tools/Tripo/inputs/zombie_runner/zombie_runner_back.png"
+      },
+      "model": "web: HD Model, H3.1 Best Quality, multi-view; Retopo quad 900 (Smart Mesh P1.0)",
+      "face_limit": 1800,
+      "texture_size": 1024,
+      "target_size_m": { "height": 0.045 },
+      "rig": true,
+      "rig_type": "humanoid (Mixamo skeleton, 65 bones)",
+      "animations": ["run"],
+      "unity": {
+        "prefab": "LL_Zombie_Runner",
+        "replaces_placeholder": "box-mesh horde walkers in Assets/LastLight/Scripts/Horde.cs",
+        "max_texture_size": 512,
+        "material": "LL_Zombie_Runner.mat (LastLight/DioramaTextured, _BaseMap = Textures/LL_Zombie_Runner_BaseColor.png)",
+        "rig_import": "Animation Type Humanoid, Avatar created from this model; clip run.001 is embedded in LL_Zombie_Runner.fbx, exported in place (Loop Time on)",
+        "scale": "FBX is 0.977 m tall after unit conversion, pivot at the feet; scale about 0.046 for 0.045 m",
+        "collider": "CapsuleCollider on prefab root"
+      },
+      "notes": "Basic running zombie from Cecil's model sheet. Generated on studio.tripo3d.ai (web credits only; the CLI must skip it). Run record in Tools/Tripo/runs/zombie_runner/web/web.json."
+    },
+    {
+      "id": "zombie_spitter",
+      "enabled": false,
+      "source": "web",
+      "category": "character",
+      "prompt": null,
+      "input_images": {
+        "front": "Tools/Tripo/inputs/zombie_spitter/zombie_spitter_front.png",
+        "side": "Tools/Tripo/inputs/zombie_spitter/zombie_spitter_side.png",
+        "back": "Tools/Tripo/inputs/zombie_spitter/zombie_spitter_back.png"
+      },
+      "face_limit": 1800,
+      "texture_size": 1024,
+      "target_size_m": { "height": 0.05 },
+      "rig": true,
+      "rig_type": "humanoid",
+      "animations": ["idle", "spit/attack"],
+      "unity": {
+        "prefab": "LL_Zombie_Spitter",
+        "replaces_placeholder": "ShooterZombie in Assets/LastLight/Scripts/Shooters.cs",
+        "max_texture_size": 512,
+        "material": "LastLight/DioramaTextured"
+      },
+      "notes": "Pending: generate on studio.tripo3d.ai the same way as zombie_runner (web credits only; the CLI must skip it)."
+    },
+    {
       "id": "pine_a",
       "enabled": true,
       "category": "foliage",
