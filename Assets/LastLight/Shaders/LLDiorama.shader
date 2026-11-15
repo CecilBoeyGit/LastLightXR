@@ -2,6 +2,8 @@
 // Vertex-coloured, flat-lit. Geometry inside the floating disk renders solid.
 // Geometry beyond the rim is discarded unless the scout light patch covers it,
 // in which case it renders as a dithered amber "ghost" preview.
+// The ground variant (_LL_GROUND, used by LL_Ground) adds tiling road / dirt / grass textures on top of the
+// vertex colour; the vertex colour's alpha picks the layer (see TrackGenerator.BuildTerrain).
 Shader "LastLight/Diorama"
 {
     Properties
@@ -10,6 +12,12 @@ Shader "LastLight/Diorama"
         _Emission ("Emission", Float) = 0
         _ClipToDisk ("Clip To Disk (0/1)", Float) = 1
         _Fade ("Fade (1 solid, 0 gone)", Float) = 1
+        [Toggle(_LL_GROUND)] _Ground ("Ground Texture Layers", Float) = 0
+        [NoScaleOffset] _RoadMap ("Road (alpha 0.25)", 2D) = "gray" {}
+        [NoScaleOffset] _DirtMap ("Dirt (alpha 0.5)", 2D) = "gray" {}
+        [NoScaleOffset] _GrassMap ("Grass (alpha 0.75)", 2D) = "gray" {}
+        _GroundTile ("Tile Size (game units)", Float) = 6
+        _TexColor ("Texture Colour (0 palette tone + texture detail, 1 texture colour)", Range(0, 1)) = 0
     }
     SubShader
     {
@@ -24,6 +32,7 @@ Shader "LastLight/Diorama"
             #pragma vertex vert
             #pragma fragment frag
             #pragma multi_compile_instancing
+            #pragma shader_feature_local _LL_GROUND
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 
             CBUFFER_START(UnityPerMaterial)
@@ -31,7 +40,14 @@ Shader "LastLight/Diorama"
                 half _Emission;
                 half _ClipToDisk;
                 half _Fade;
+                float _GroundTile;
+                half _TexColor;
             CBUFFER_END
+
+            TEXTURE2D(_RoadMap);
+            TEXTURE2D(_DirtMap);
+            TEXTURE2D(_GrassMap);
+            SAMPLER(sampler_RoadMap);
 
             // Globals set by Diorama.cs every frame.
             float4 _LL_Disk;        // xyz centre (world), w radius (world)
@@ -59,6 +75,10 @@ Shader "LastLight/Diorama"
                 float3 positionWS : TEXCOORD0;
                 float3 normalWS   : TEXCOORD1;
                 half4  color      : COLOR;
+            #if defined(_LL_GROUND)
+                float2 groundUV   : TEXCOORD2;
+                half4  groundMean : TEXCOORD3;  // rgb the layer texture's average colour, a layer index (0 none)
+            #endif
                 UNITY_VERTEX_OUTPUT_STEREO
             };
 
@@ -71,8 +91,36 @@ Shader "LastLight/Diorama"
                 o.positionCS = TransformWorldToHClip(o.positionWS);
                 o.normalWS = TransformObjectToWorldNormal(v.normalOS);
                 o.color = v.color;
+            #if defined(_LL_GROUND)
+                // Object space, so the pattern rides along with each scrolling road chunk. Chunks are 12 units long,
+                // so a tile size that divides 12 keeps the seams between chunks invisible.
+                o.groundUV = v.positionOS.xz / max(_GroundTile, 1e-3);
+                half layer = round(v.color.a * 4.0);
+                // The smallest mip is the texture's average colour, so detail can be normalised around the palette tone.
+                half3 mean = 1;
+                if (layer == 1) mean = SAMPLE_TEXTURE2D_LOD(_RoadMap, sampler_RoadMap, float2(0.5, 0.5), 12).rgb;
+                else if (layer == 2) mean = SAMPLE_TEXTURE2D_LOD(_DirtMap, sampler_RoadMap, float2(0.5, 0.5), 12).rgb;
+                else if (layer == 3) mean = SAMPLE_TEXTURE2D_LOD(_GrassMap, sampler_RoadMap, float2(0.5, 0.5), 12).rgb;
+                o.groundMean = half4(mean, layer < 4 ? layer : 0);
+            #endif
                 return o;
             }
+
+        #if defined(_LL_GROUND)
+            half3 GroundAlbedo(Varyings i, half3 vertexColor)
+            {
+                // Gradients taken outside the branch, so layer borders don't break mip selection.
+                float2 dx = ddx(i.groundUV), dy = ddy(i.groundUV);
+                half layer = i.groundMean.a;
+                if (layer < 0.5) return vertexColor;
+                half3 tex;
+                [branch] if (layer < 1.5) tex = SAMPLE_TEXTURE2D_GRAD(_RoadMap, sampler_RoadMap, i.groundUV, dx, dy).rgb;
+                else if (layer < 2.5) tex = SAMPLE_TEXTURE2D_GRAD(_DirtMap, sampler_RoadMap, i.groundUV, dx, dy).rgb;
+                else tex = SAMPLE_TEXTURE2D_GRAD(_GrassMap, sampler_RoadMap, i.groundUV, dx, dy).rgb;
+                half3 detail = vertexColor * tex / max(i.groundMean.rgb, 0.02);
+                return lerp(detail, tex, _TexColor);
+            }
+        #endif
 
             // 4x4 ordered dither threshold, so fading pieces dissolve while staying opaque and sorted.
             float Bayer4(float2 px)
@@ -117,6 +165,9 @@ Shader "LastLight/Diorama"
 
                 float3 N = normalize(i.normalWS);
                 half3 albedo = i.color.rgb * _Tint.rgb;
+            #if defined(_LL_GROUND)
+                albedo = GroundAlbedo(i, i.color.rgb) * _Tint.rgb;
+            #endif
 
                 // Moonlight + ambient.
                 half3 light = _LL_Ambient.rgb + _LL_Moon.w * saturate(dot(N, normalize(_LL_Moon.xyz))) * half3(0.55, 0.62, 0.8);

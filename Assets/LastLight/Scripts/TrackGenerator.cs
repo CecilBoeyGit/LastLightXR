@@ -64,6 +64,8 @@ namespace LastLight
         const float SideExtent = 22f;
         const float CellX = 1.1f;
         const float CellZ = 1.2f;
+        // Vertex-colour alpha on the terrain picks the ground shader's texture layer; 1 stays plain (stone, cliffs).
+        public const float LayerRoad = 0.25f, LayerDirt = 0.5f, LayerGrass = 0.75f;
         const float CarMargin = Vehicle.HalfWidth;
         const int DeadEndsFromChunk = 18;
         const int FirstCliffChunk = 30;
@@ -100,7 +102,7 @@ namespace LastLight
         public int TurretsSpawnedEarly { get; private set; }
 
         readonly Transform parent;
-        readonly Material terrainMat, pickupMat;
+        readonly Material terrainMat, groundMat, pickupMat;
         readonly int seed;
         readonly float phase1, phase2;
         int nextIndex;
@@ -117,10 +119,11 @@ namespace LastLight
         public System.Action<Fork> OnForkPlanned;
         public System.Action<CliffRun> OnCliffPlanned;
 
-        public TrackGenerator(Transform parent, Material terrainMat, Material pickupMat, int seed)
+        public TrackGenerator(Transform parent, Material terrainMat, Material pickupMat, int seed, Material groundMat = null)
         {
             this.parent = parent;
             this.terrainMat = terrainMat;
+            this.groundMat = groundMat != null ? groundMat : terrainMat;
             this.pickupMat = pickupMat;
             this.seed = seed;
             var rng = new System.Random(seed * 31 + 7);
@@ -477,7 +480,7 @@ namespace LastLight
             BuildEdgePosts(mb, c);
             BuildScenery(mb, c, rng);
             c.terrainMesh = mb.ToMesh($"LL_Chunk_{index}");
-            MeshBuilder.Spawn("Terrain", c.root, c.terrainMesh, terrainMat);
+            MeshBuilder.Spawn("Terrain", c.root, c.terrainMesh, groundMat);
 
             if (c.type == ChunkType.Blocked1 || c.type == ChunkType.Blocked2) PlaceBlocker(c, rng);
             if (c.type == ChunkType.Fork) PlaceForkContents(c, rng);
@@ -579,21 +582,24 @@ namespace LastLight
                     float slope = Mathf.Max(Mathf.Abs(a.y - cc.y), Mathf.Abs(b.y - d.y));
                     float dist = RoadDistance(xc, sc);
                     Color col;
+                    float layer = 1f;
                     if (dist < 0f)
                     {
                         float v = Mathf.PerlinNoise(xc * 0.7f, sc * 0.7f);
                         col = Palette.Road * (0.88f + 0.22f * v);
+                        layer = LayerRoad;
                     }
                     else if (hAvg < -0.3f) col = Palette.Stone * (0.8f + 0.5f * Mathf.PerlinNoise(xc * 0.6f, sc * 0.6f));
-                    else if (dist < 0.9f) col = Palette.RoadDark;
+                    else if (dist < 0.9f) { col = Palette.RoadDark; layer = LayerDirt; }
                     else if (slope > 1.4f) col = Palette.Cliff;
                     else
                     {
                         float v = Mathf.PerlinNoise(xc * 0.35f + 5f, sc * 0.35f);
                         col = Color.Lerp(Palette.FloorDark, Palette.Moss, v * 0.8f);
                         if (hAvg > 4f) col = Color.Lerp(col, Palette.Rock, 0.4f);
+                        layer = LayerGrass;
                     }
-                    col.a = 1f;
+                    col.a = layer;
                     mb.Quad(a, b, cc, d, col);
                 }
             }

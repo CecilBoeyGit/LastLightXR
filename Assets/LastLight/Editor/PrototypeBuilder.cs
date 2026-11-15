@@ -27,6 +27,7 @@ namespace LastLight.EditorTools
         {
             EnablePicoFeatures();
             var terrain = MakeMaterial("LL_Terrain", "LastLight/Diorama", m => m.SetFloat("_ClipToDisk", 1f));
+            var ground = MakeGroundMaterial();
             var island = MakeMaterial("LL_IslandBase", "LastLight/Diorama", m => m.SetFloat("_ClipToDisk", 0f));
             var glow = MakeMaterial("LL_Glow", "LastLight/Glow", m => m.SetColor("_Tint", Color.white));
             // Loaded at runtime from Resources, which also keeps the sprite shader in builds.
@@ -77,6 +78,7 @@ namespace LastLight.EditorTools
             director.diorama = diorama;
             director.head = cam != null ? cam.transform : null;
             director.terrainMaterial = terrain;
+            director.groundMaterial = ground;
             director.baseMaterial = island;
             director.glowMaterial = glow;
 
@@ -148,6 +150,52 @@ namespace LastLight.EditorTools
                 ti.textureCompression = TextureImporterCompression.CompressedHQ;
                 ti.SaveAndReimport();
             }
+        }
+
+        const string TerrainArtDir = "Assets/LastLight/Art/Terrain";
+
+        /// <summary>
+        /// Road chunk ground: the diorama shader's ground variant with the road / forest dirt / mossy grass textures.
+        /// The textures tile, so they repeat with mipmaps and anisotropic filtering for the low viewing angle.
+        /// </summary>
+        static Material MakeGroundMaterial()
+        {
+            Texture2D Layer(string file)
+            {
+                string path = $"{TerrainArtDir}/{file}.png";
+                if (AssetImporter.GetAtPath(path) is TextureImporter ti)
+                {
+                    ti.textureType = TextureImporterType.Default;
+                    ti.sRGBTexture = true;
+                    ti.alphaSource = TextureImporterAlphaSource.None;
+                    ti.wrapMode = TextureWrapMode.Repeat;
+                    ti.mipmapEnabled = true;
+                    ti.filterMode = FilterMode.Trilinear;
+                    ti.anisoLevel = 4;
+                    ti.npotScale = TextureImporterNPOTScale.ToNearest;
+                    ti.maxTextureSize = 1024;
+                    ti.textureCompression = TextureImporterCompression.Compressed;
+                    ti.SaveAndReimport();
+                }
+                var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+                if (tex == null) Debug.LogWarning("[LastLight] Ground texture missing: " + path);
+                return tex;
+            }
+            var road = Layer("Road");
+            var dirt = Layer("Dirt");
+            var grass = Layer("Grass");
+            return MakeMaterial("LL_Ground", "LastLight/Diorama", m =>
+            {
+                m.SetFloat("_ClipToDisk", 1f);
+                m.SetTexture("_RoadMap", road);
+                m.SetTexture("_DirtMap", dirt);
+                m.SetTexture("_GrassMap", grass);
+                m.SetFloat("_GroundTile", 6f);      // divides the 12-unit chunk length, so chunk seams stay hidden
+                if (!m.HasProperty("_TexColor") || m.GetFloat("_TexColor") < 0f) m.SetFloat("_TexColor", 0f);
+                bool on = road != null && dirt != null && grass != null;
+                m.SetFloat("_Ground", on ? 1f : 0f);
+                if (on) m.EnableKeyword("_LL_GROUND"); else m.DisableKeyword("_LL_GROUND");
+            });
         }
 
         static Material MakeMaterial(string name, string shaderName, System.Action<Material> setup, string dir = MatDir)
@@ -852,6 +900,10 @@ namespace LastLight.EditorTools
             Check("Horde walkers are the rigged Tripo runner", director.Crowd.UsesModels);
             Check($"Spitters are the rigged Tripo model, lunging as the acid launches (spit clip weight {spitWeightAtLaunch:0.00} at launch)",
                 anySpitter && spittersUseModels && spitWeightAtLaunch > 0.8f);
+            var groundRenderers = Object.FindObjectsByType<MeshRenderer>(FindObjectsSortMode.None).Where(r => r.name == "Terrain").ToList();
+            Check($"Road chunks use the textured road / dirt / grass ground ({groundRenderers.Count} chunks)",
+                groundRenderers.Count > 0 && groundRenderers.All(r => r.sharedMaterial != null && r.sharedMaterial.IsKeywordEnabled("_LL_GROUND")
+                    && r.sharedMaterial.GetTexture("_RoadMap") != null && r.sharedMaterial.GetTexture("_DirtMap") != null && r.sharedMaterial.GetTexture("_GrassMap") != null));
             sb.AppendLine();
             sb.AppendLine($"Splits generated: {count("has a dead end")} with a dead end, {count("has an obstacle branch")} with an obstacle branch");
             sb.AppendLine($"Counts: coins {count("Coin collected")}, boosters {count("Booster collected")}, shields {count("Shield collected")}, flashlights {count("Flashlight collected")}, shield saves {count("Shield absorbed") + count("Shield stopped")}, scrapes {count("Scraping")}, sweeps {count("Swept boulder")}, damage events {count(", health ")}, splits {count("split:")}");

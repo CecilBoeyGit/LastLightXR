@@ -38,6 +38,8 @@ namespace LastLight
         public Diorama diorama;
         public Transform head;
         public Material terrainMaterial;
+        /// <summary>Road chunk ground: the diorama shader with tiling road / dirt / grass textures. Falls back to terrainMaterial.</summary>
+        public Material groundMaterial;
         public Material baseMaterial;
         public Material glowMaterial;
 
@@ -316,7 +318,7 @@ namespace LastLight
 
         TrackGenerator NewTrack(int trackSeed)
         {
-            var t = new TrackGenerator(worldRoot, terrainMaterial, pickupMaterial, trackSeed);
+            var t = new TrackGenerator(worldRoot, terrainMaterial, pickupMaterial, trackSeed, groundMaterial);
             t.OnRockfallWarning = h => { sound?.Play(sound.rumble, 0.8f); Log("Rockfall warning"); };
             t.OnCliffPlanned = r => Log($"Cliff road planned at {r.startS:0} m: half width {r.halfWidth:0.00}");
             t.OnForkPlanned = f => Log($"Split planned at {f.startS:0} m: {(f.deadSide != 0 ? "has a dead end" : "has an obstacle branch")}");

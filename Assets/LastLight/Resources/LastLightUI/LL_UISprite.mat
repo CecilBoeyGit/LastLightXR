@@ -31,6 +31,7 @@ Material:
     m_Floats:
     - _DstBlend: 10
     - _SrcBlend: 5
+    - _ZTest: 4
     m_Colors:
     - _Color: {r: 1, g: 1, b: 1, a: 1}
   m_BuildTextureStacks: []
