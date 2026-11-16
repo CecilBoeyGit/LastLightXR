@@ -21,6 +21,7 @@ namespace LastLight
         public readonly List<ShooterZombie> shooters = new List<ShooterZombie>();
         public bool rockfallTriggered;
         public Mesh terrainMesh;
+        public readonly List<Mesh> propMeshes = new List<Mesh>();   // merged Tripo pines, rocks and grass
     }
 
     /// <summary>
@@ -458,6 +459,7 @@ namespace LastLight
             foreach (var p in c.pickups) pickups.Remove(p);
             foreach (var z in c.shooters) shooters.Remove(z);
             if (c.terrainMesh != null) Object.DestroyImmediate(c.terrainMesh);
+            foreach (var m in c.propMeshes) if (m != null) Object.DestroyImmediate(m);
             if (c.root != null) Object.DestroyImmediate(c.root.gameObject);
         }
 
@@ -478,9 +480,17 @@ namespace LastLight
             var mb = new MeshBuilder();
             BuildTerrain(mb, c);
             BuildEdgePosts(mb, c);
-            BuildScenery(mb, c, rng);
+            var props = SceneryModels.Active;
+            var pines = props != null && props.HasPine ? new PropBatch(props.pineMesh) : null;
+            var rocks = props != null && props.HasRock ? new PropBatch(props.rockMesh) : null;
+            var grass = props != null && props.HasGrass ? new PropBatch(props.grassMesh) : null;
+            BuildScenery(mb, c, rng, pines, rocks);
+            if (grass != null) ScatterGrass(grass, c);
             c.terrainMesh = mb.ToMesh($"LL_Chunk_{index}");
             MeshBuilder.Spawn("Terrain", c.root, c.terrainMesh, groundMat);
+            SpawnProps(c, pines, props != null ? props.pineMaterial : null, "Pines");
+            SpawnProps(c, rocks, props != null ? props.rockMaterial : null, "Rocks");
+            SpawnProps(c, grass, props != null ? props.grassMaterial : null, "Grass");
 
             if (c.type == ChunkType.Blocked1 || c.type == ChunkType.Blocked2) PlaceBlocker(c, rng);
             if (c.type == ChunkType.Fork) PlaceForkContents(c, rng);
@@ -650,8 +660,41 @@ namespace LastLight
             mb.Box(new Vector3(x, 0.28f, z), new Vector3(0.14f, 0.56f, 0.14f), Palette.LaneMark);
         }
 
-        void BuildScenery(MeshBuilder mb, Chunk c, System.Random rng)
+        static void SpawnProps(Chunk c, PropBatch batch, Material mat, string name)
         {
+            if (batch == null || batch.Count == 0 || mat == null) return;
+            var mesh = batch.ToMesh($"LL_{name}_{c.index}");
+            c.propMeshes.Add(mesh);
+            MeshBuilder.Spawn(name, c.root, mesh, mat);
+        }
+
+        /// <summary>Its own random stream, so decoration never shifts where hazards and pickups land.</summary>
+        System.Random DecoRng(Chunk c) => new System.Random(MixSeed(seed + 7919, c.index));
+
+        /// <summary>Tripo grass tufts on the forest floor, kept off the road, its verges and the cliffs.</summary>
+        void ScatterGrass(PropBatch grass, Chunk c)
+        {
+            var rng = new System.Random(MixSeed(seed + 104729, c.index));
+            int count = 14 + rng.Next(6);
+            for (int i = 0; i < count; i++)
+            {
+                float xRel = ((float)rng.NextDouble() * 2f - 1f) * (SideExtent - 1f);
+                float z = (float)rng.NextDouble() * ChunkLength;
+                float h = 0.45f + (float)rng.NextDouble() * 0.4f;
+                float yaw = (float)rng.NextDouble() * 360f;
+                float shade = 0.8f + (float)rng.NextDouble() * 0.3f;
+                float s = c.startS + z;
+                if (RoadDistance(xRel, s) < 1.2f) continue;
+                if (CliffAt(s) != null) continue;
+                float y = Height(xRel, s, CliffFactor(c, xRel, z));
+                if (y < -0.3f) continue;
+                grass.Add(new Vector3(Center(s) + xRel, y - 0.05f, z), h, h, Quaternion.Euler(0f, yaw, 0f), new Color(shade, shade, shade, 1f));
+            }
+        }
+
+        void BuildScenery(MeshBuilder mb, Chunk c, System.Random rng, PropBatch pines = null, PropBatch rockProps = null)
+        {
+            var deco = DecoRng(c);
             int trees = c.type == ChunkType.Fork ? 20 + rng.Next(6) : 12 + rng.Next(6);
             for (int i = 0; i < trees; i++)
             {
@@ -662,7 +705,16 @@ namespace LastLight
                 if (CliffAt(s) != null) continue;
                 float y = Height(xRel, s, CliffFactor(c, xRel, z));
                 float scale = 0.8f + (float)rng.NextDouble() * 0.6f;
-                AddPine(mb, new Vector3(Center(s) + xRel, y - 0.1f, z), scale, rng.NextDouble() < 0.5);
+                bool dark = rng.NextDouble() < 0.5;
+                var basePos = new Vector3(Center(s) + xRel, y - 0.1f, z);
+                if (pines != null)
+                {
+                    // Same footprint as the cone pine: about 3 units tall at scale 1.
+                    float yaw = (float)deco.NextDouble() * 360f;
+                    float shade = dark ? 0.8f : 1f;
+                    pines.Add(basePos, 3f * scale, 3f * scale, Quaternion.Euler(0f, yaw, 0f), new Color(shade, shade, shade, 1f));
+                }
+                else AddPine(mb, basePos, scale, dark);
             }
             int rocks = 3 + rng.Next(4);
             for (int i = 0; i < rocks; i++)
@@ -673,7 +725,17 @@ namespace LastLight
                 if (RoadDistance(xRel, s) < 0.8f) continue;
                 if (CliffAt(s) != null) continue;
                 float y = Height(xRel, s, CliffFactor(c, xRel, z));
-                mb.Rock(new Vector3(Center(s) + xRel, y + 0.2f, z), 0.4f + (float)rng.NextDouble() * 0.6f, rng.Next(), Palette.Rock);
+                float radius = 0.4f + (float)rng.NextDouble() * 0.6f;
+                int rockSeed = rng.Next();
+                if (rockProps != null)
+                {
+                    // About as wide as the procedural rock, sunk slightly so it sits in the ground.
+                    float h = radius * 1.6f;
+                    float yaw = (float)deco.NextDouble() * 360f;
+                    float shade = 0.85f + (float)deco.NextDouble() * 0.25f;
+                    rockProps.Add(new Vector3(Center(s) + xRel, y - 0.12f * h, z), h, h, Quaternion.Euler(0f, yaw, 0f), new Color(shade, shade, shade, 1f));
+                }
+                else mb.Rock(new Vector3(Center(s) + xRel, y + 0.2f, z), radius, rockSeed, Palette.Rock);
             }
             if (c.type == ChunkType.Cliff)
             {

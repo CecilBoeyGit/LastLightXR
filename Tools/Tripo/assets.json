@@ -184,6 +184,75 @@
       "notes": "Spitter zombie from Cecil's model sheet (yellow bile sac). Generated on studio.tripo3d.ai (web credits only; the CLI must skip it). Run record in Tools/Tripo/runs/zombie_spitter/web/web.json."
     },
     {
+      "id": "pine_tree",
+      "enabled": false,
+      "source": "web",
+      "category": "foliage",
+      "prompt": null,
+      "input_images": { "front": "Tools/Tripo/inputs/pine_tree/pine_tree_front.png" },
+      "model": "web: HD Model, H3.1 Best Quality, single image; Retopo triangle 1000 (Smart Mesh P1.0) -> 970 tris",
+      "face_limit": 1000,
+      "texture_size": 1024,
+      "rig": false,
+      "animations": [],
+      "unity": {
+        "prefab": "LL_Pine",
+        "replaces_placeholder": "procedural cone pines (TrackGenerator.AddPine)",
+        "max_texture_size": 512,
+        "material": "LL_Pine.mat (LastLight/DioramaTextured, _BaseMap = Textures/LL_Pine_BaseColor.png, GPU instancing on)",
+        "import": "Set by Assets/LastLight/Editor/SceneryModelSetup.cs: no rig, no animation, no imported materials",
+        "scale": "FBX is 0.98 m tall, 0.60 m wide after unit conversion, pivot at the base centre",
+        "collider": "none (decorative)"
+      },
+      "notes": "Layered carved-look pine from Cecil's reference sheet; many per chunk. Generated on studio.tripo3d.ai (web credits only; the CLI must skip it). Run record in Tools/Tripo/runs/pine/web/web.json."
+    },
+    {
+      "id": "cliff_boulder",
+      "enabled": false,
+      "source": "web",
+      "category": "rock",
+      "prompt": null,
+      "input_images": { "front": "Tools/Tripo/inputs/cliff_boulder/cliff_boulder_front.png" },
+      "model": "web: HD Model, H3.1 Best Quality, single image; Retopo triangle 500 (Smart Mesh P1.0) -> 598 tris",
+      "face_limit": 500,
+      "texture_size": 1024,
+      "rig": false,
+      "animations": [],
+      "unity": {
+        "prefab": "LL_Boulder",
+        "replaces_placeholder": "procedural roadside rocks and the boulder hazard mesh",
+        "max_texture_size": 512,
+        "material": "LL_Boulder.mat (LastLight/DioramaTextured, _BaseMap = Textures/LL_Boulder_BaseColor.png, GPU instancing on)",
+        "import": "Set by Assets/LastLight/Editor/SceneryModelSetup.cs: no rig, no animation, no imported materials",
+        "scale": "FBX is 0.83 m tall, 0.98 m wide after unit conversion, pivot at the base centre",
+        "collider": "keep the gameplay hit volume separate from the mesh"
+      },
+      "notes": "Faceted brown cliff boulder with a moss patch, from Cecil's reference sheet. Generated on studio.tripo3d.ai (web credits only; the CLI must skip it). Run record in Tools/Tripo/runs/boulder/web/web.json."
+    },
+    {
+      "id": "grass_tuft",
+      "enabled": false,
+      "source": "web",
+      "category": "foliage",
+      "prompt": null,
+      "input_images": { "front": "Tools/Tripo/inputs/grass_tuft/grass_tuft_front.png" },
+      "model": "web: HD Model, H3.1 Best Quality, single image; Retopo triangle 500 (Smart Mesh P1.0) -> 538 tris",
+      "face_limit": 500,
+      "texture_size": 1024,
+      "rig": false,
+      "animations": [],
+      "unity": {
+        "prefab": "LL_GrassTuft",
+        "replaces_placeholder": "none yet (new ground dressing)",
+        "max_texture_size": 512,
+        "material": "LL_GrassTuft.mat (LastLight/DioramaTextured, _BaseMap = Textures/LL_GrassTuft_BaseColor.png, GPU instancing on)",
+        "import": "Set by Assets/LastLight/Editor/SceneryModelSetup.cs: no rig, no animation, no imported materials",
+        "scale": "FBX is 0.98 m tall, 0.98 m wide after unit conversion, pivot at the base centre",
+        "collider": "none (decorative)"
+      },
+      "notes": "Chunky grass tuft from Cecil's reference sheet, for dressing the forest floor. Generated on studio.tripo3d.ai (web credits only; the CLI must skip it). Run record in Tools/Tripo/runs/grass_tuft/web/web.json."
+    },
+    {
       "id": "pine_a",
       "enabled": true,
       "category": "foliage",
