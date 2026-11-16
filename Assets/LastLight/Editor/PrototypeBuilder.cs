@@ -35,6 +35,7 @@ namespace LastLight.EditorTools
             MakeMaterial("LL_UIText", "LastLight/Text", m => m.SetColor("_Color", Color.white), UIDir);
             ConfigureUITextures();
             ZombieModelSetup.Configure();   // Tripo horde runner and spitter, loaded from Resources at runtime
+            SceneryModelSetup.Configure();  // Tripo pine, boulder and grass tuft, merged into road chunks at runtime
 
             var scene = EditorSceneManager.OpenScene(TemplateScene, OpenSceneMode.Single);
 
@@ -850,6 +851,16 @@ namespace LastLight.EditorTools
             Check("Shield wears off after 10 s", shieldTimed);
             Check("Rim gauges replace the text readout and stay in range", gaugesSane && GameObject.Find("HUD") == null && director.Gauges != null);
             Check("Horde walkers are the rigged Tripo runner", director.Crowd.UsesModels);
+            {
+                var propRenderers = Object.FindObjectsByType<MeshRenderer>(FindObjectsSortMode.None);
+                int pineChunks = propRenderers.Count(r => r.name == "Pines" && r.sharedMaterial != null && r.sharedMaterial.name == "LL_Pine");
+                int rockChunks = propRenderers.Count(r => r.name == "Rocks" && r.sharedMaterial != null && r.sharedMaterial.name == "LL_Boulder");
+                int grassChunks = propRenderers.Count(r => r.name == "Grass" && r.sharedMaterial != null && r.sharedMaterial.name == "LL_GrassTuft");
+                int tris = propRenderers.Where(r => r.name == "Pines" || r.name == "Rocks" || r.name == "Grass")
+                    .Sum(r => { var mf = r.GetComponent<MeshFilter>(); return mf != null && mf.sharedMesh != null ? (int)mf.sharedMesh.GetIndexCount(0) / 3 : 0; });
+                Check($"Pines, rocks and grass tufts are the Tripo models ({pineChunks}/{rockChunks}/{grassChunks} chunks, {tris} prop triangles loaded)",
+                    pineChunks > 0 && rockChunks > 0 && grassChunks > 0);
+            }
             Check($"Spitters are the rigged Tripo model, lunging as the acid launches (spit clip weight {spitWeightAtLaunch:0.00} at launch)",
                 anySpitter && spittersUseModels && spitWeightAtLaunch > 0.8f);
             sb.AppendLine();
