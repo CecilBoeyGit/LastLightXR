@@ -40,6 +40,37 @@ namespace LastLight
             rain.loop = true;
             rain.volume = 0f;
             rain.clip = Noise("rain", 2f, 0.35f, 9f, true);
+
+            // The BGM loop, rendered offline by Tools/Audio/render_bgm.py. It streams, so it costs little memory.
+            music = host.AddComponent<AudioSource>();
+            music.playOnAwake = false;
+            music.spatialBlend = 0f;
+            music.loop = true;
+            music.volume = 0f;
+            music.priority = 0;
+            music.clip = Resources.Load<AudioClip>("LastLightAudio/LL_BGM_Run");
+        }
+
+        const float MusicRun = 0.34f, MusicMenu = 0.24f, MusicPaused = 0.12f, MusicGameOver = 0.07f;
+        const float MusicFade = 0.6f;   // volume per second
+        readonly AudioSource music;
+
+        /// <summary>
+        /// Keeps the BGM loop playing and eases its volume toward the level for the current state:
+        /// full on a run, softer in the menus and on pause, nearly gone on the run-over panel.
+        /// </summary>
+        public void TickMusic(RunState state, float dt)
+        {
+            if (!Application.isPlaying || music.clip == null) return;
+            if (!music.isPlaying) music.Play();
+            float target = state switch
+            {
+                RunState.Running => MusicRun,
+                RunState.Paused => MusicPaused,
+                RunState.GameOver => MusicGameOver,
+                _ => MusicMenu,
+            };
+            music.volume = Mathf.MoveTowards(music.volume, target, MusicFade * dt);
         }
 
         /// <summary>Sets the rain loop's volume, starting or stopping it as needed.</summary>
