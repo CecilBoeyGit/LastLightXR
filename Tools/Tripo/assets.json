@@ -253,6 +253,28 @@
       "notes": "Chunky grass tuft from Cecil's reference sheet, for dressing the forest floor. Generated on studio.tripo3d.ai (web credits only; the CLI must skip it). Run record in Tools/Tripo/runs/grass_tuft/web/web.json."
     },
     {
+      "id": "garage",
+      "enabled": false,
+      "source": "web",
+      "category": "environment",
+      "prompt": null,
+      "input_images": { "front": "Tools/Tripo/inputs/garage/garage_reference.png" },
+      "model": "web: HD Model, H3.1 Best Quality, single image; Retopo triangle 10000 (Smart Mesh P1.0) -> 9706 tris",
+      "face_limit": 10000,
+      "texture_size": 2048,
+      "rig": false,
+      "animations": [],
+      "unity": {
+        "prefab": "LL_Garage",
+        "replaces_placeholder": "procedural garage room in Assets/LastLight/Scripts/Garage.cs (not yet swapped)",
+        "max_texture_size": 2048,
+        "material": "LL_Garage.mat (LastLight/DioramaTextured, _BaseMap = Textures/LL_Garage_BaseColor.png, not clipped to the disk)",
+        "import": "Set by Assets/LastLight/Editor/SceneryModelSetup.cs: no rig, no animation, no imported materials",
+        "collider": "none (menu display)"
+      },
+      "notes": "Floating-island garage diorama (turntable, workbench, corrugated roof, pines on a rock base) from Cecil's garage render. Generated on studio.tripo3d.ai (web credits only; the CLI must skip it). Run record in Tools/Tripo/runs/garage/web/web.json."
+    },
+    {
       "id": "pine_a",
       "enabled": true,
       "category": "foliage",
