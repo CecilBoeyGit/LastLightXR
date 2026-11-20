@@ -9,7 +9,7 @@ namespace LastLight
     public enum RunState { Running, Paused, GameOver, Menu, Tutorial, Garage }
 
     /// <summary>How the test autopilot drives. Normal plays well; the others deliberately exercise failure paths.</summary>
-    public enum AutopilotMode { Normal, NoSteering, TakeDeadEnds, EscapeDeadEnds, FallOffCliffs, IgnorePowerups }
+    public enum AutopilotMode { Normal, NoSteering, TakeDeadEnds, EscapeDeadEnds, FallOffCliffs, IgnorePowerups, TwinDeadStrip, TwinRidgeEscape }
 
     /// <summary>
     /// Last Light first playable, Direction 02 (eye gaze + hand tracking).
@@ -33,10 +33,13 @@ namespace LastLight
         const float GameOverInputDelay = 0.6f;  // and ignore pinches for a moment after it does
         const float RespawnGrace = 2.5f;        // seconds of blinking immunity after a respawn
         const float RespawnClearRange = 16f;    // obstacles this far ahead are cleared for a respawn
-        const float StormSteerGain = 0.7f;      // extra steering per unit of storm: hand moves are amplified
+        const float SnowSteerGain = 0.7f;       // extra steering per unit of snow: hand moves are amplified on ice
         const float SkidGapMin = 1.2f, SkidGapMax = 2.6f;
-        const float SkidSpeedMin = 2.6f, SkidSpeedMax = 4.2f;   // game units per second at full storm
+        const float SkidSpeedMin = 2.6f, SkidSpeedMax = 4.2f;   // game units per second in full snow
         const float SkidSeconds = 0.45f;
+        const float PickupKeepRadius = 3.6f;    // a powerup already being stared at stays the target this far out
+        const float PickupLoseGrace = 0.2f;     // and survives this long with the eyes off it
+        const float BranchGapStart = 3.2f, BranchGapEnd = 1.3f;     // seconds between blown branches, early and late in a run
 
         [Header("Scene references")]
         public Diorama diorama;
@@ -100,7 +103,7 @@ namespace LastLight
         public float passthroughTint = 0.3f;
 
         [Header("Weather")]
-        [Tooltip("Fog and storm encounters in the middle and late stages of a run.")]
+        [Tooltip("Fog, storm and snow encounters from about half a kilometre into a run.")]
         public bool weatherEnabled = true;
 
         [Header("Menu and tutorial")]
@@ -135,11 +138,18 @@ namespace LastLight
         public DashboardCluster Gauges => gauges;
         public WeatherSystem Weather => weather;
         public StorageRack Rack => rack;
+        public RepairQte Repair => qte;
+        public RockThrower Thrower => thrower;
+        public SnowTrails Tracks => trails;
+        /// <summary>True while the Angel Transponder's free respawn for this run is still unused.</summary>
+        public bool FreeRespawnAvailable => car.Model == VehicleCatalog.Angel && !freeRespawnUsed;
+        /// <summary>Crashes this run that the Evasion trait shrugged off. For tests.</summary>
+        public int Evasions { get; private set; }
         /// <summary>Stand-in hand frames for tests: when set, they replace the tracked hands.</summary>
         public HandFrame? ScriptedLeftHand, ScriptedRightHand;
         public float AcidTime => car.acid;
         public int RespawnsThisRun => respawnsThisRun;
-        public int NextRespawnCost => respawnBaseCost * (1 << Mathf.Min(respawnsThisRun, 20));
+        public int NextRespawnCost => FreeRespawnAvailable ? 0 : respawnBaseCost * (1 << Mathf.Min(paidRespawns, 20));
         public bool GameOverPanelShown => gameOverPanel.Visible;
         /// <summary>Everything that belongs to the forest world, hidden while the garage is open.</summary>
         public Transform WorldRoot => worldRoot;
@@ -161,8 +171,17 @@ namespace LastLight
         DashboardCluster gauges;
         WeatherSystem weather;
         StorageRack rack;
+        RepairQte qte;
+        RockThrower thrower;
+        SnowTrails trails;
         System.Random skidRng = new System.Random(1);
-        float skidIn = 1.5f;
+        System.Random evadeRng = new System.Random(1);
+        System.Random branchRng = new System.Random(1);
+        float skidIn = 1.5f, branchIn = 1f;
+        int paidRespawns, twinStrip;
+        bool freeRespawnUsed;
+        float pickupLost;
+        Pickup pickupTarget;
         Material pickupMaterial;
         MeshRenderer dwellRing;
         Mesh dwellMesh;
@@ -314,6 +333,16 @@ namespace LastLight
             weather.OnLightning = () => Log("Lightning strike");
             weather.OnThunder = () => sound?.Play(sound.thunder, 0.8f);
 
+            qte = new RepairQte(worldRoot, glowMaterial);
+            qte.OnWrenchShown = () => Log("Repair wrench shown over the jeep");
+            qte.OnStarted = () => { sound?.Play(sound.gazeArm, 0.7f); Log("Repair started: look at the dots"); };
+            qte.OnDotCleared = i => { sound?.Play(sound.coin, 0.8f); Log($"Repair dot {i + 1} of {RepairQte.DotCount} cleared"); };
+            qte.OnCancelled = () => Log("Repair cancelled");
+            thrower = new RockThrower(worldRoot, pickupMaterial, glowMaterial);
+            thrower.OnThrow = z => { sound?.Play(sound.sweep, 0.7f); Log($"Threw a rock at a spitter {z.DioramaLocal.z:0} units ahead"); };
+            thrower.OnHit = z => KillShooter(z, "A thrown rock knocked down");
+            trails = new SnowTrails(worldRoot, terrainMaterial);
+
             dwellBlock = new MaterialPropertyBlock();
             dwellMesh = new Mesh { name = "LL_DwellRing" };
             dwellRing = MeshBuilder.Spawn("Gaze Progress", worldRoot, dwellMesh, glowMaterial);
@@ -343,7 +372,9 @@ namespace LastLight
         {
             var t = new TrackGenerator(worldRoot, terrainMaterial, pickupMaterial, trackSeed, groundMaterial);
             t.OnRockfallWarning = h => { sound?.Play(sound.rumble, 0.8f); Log("Rockfall warning"); };
-            t.OnCliffPlanned = r => Log($"Cliff road planned at {r.startS:0} m: half width {r.halfWidth:0.00}");
+            t.OnCliffPlanned = r => Log(r.twin
+                ? $"Twin cliff road planned at {r.startS:0} m: {(r.deadSide == 0 ? "both strips safe" : $"the {(r.deadSide < 0 ? "left" : "right")} strip ends in a drop")}, ridge at {r.ridgeS:0} m"
+                : $"Cliff road planned at {r.startS:0} m: half width {r.halfWidth:0.00}");
             t.OnForkPlanned = f => Log($"Split planned at {f.startS:0} m: {(f.deadSide != 0 ? "has a dead end" : "has an obstacle branch")}");
             return t;
         }
@@ -367,7 +398,17 @@ namespace LastLight
             tutorial.Visible = false;
             gameOverPanel.Visible = false;
             State = RunState.Running;
+            ApplyTraits();
             Log($"Run {runIndex} started, seed {runSeed}, driving {VehicleCatalog.All[car.Model].name}");
+            FitStartingGear();
+        }
+
+        /// <summary>The Rhino rolls out with a shovel on its bumper every run, outside the storage compartment.</summary>
+        void FitStartingGear()
+        {
+            if (car.Model != VehicleCatalog.Rhino || shovel.Active) return;
+            shovel.Activate();
+            Log("Rhino fitted with its shovel");
         }
 
         void OpenMenu()
@@ -439,8 +480,22 @@ namespace LastLight
             weather.Reset(runSeed);
             scout.Fog = 0f;
             interventions.SteerGain = 1f;
+            interventions.GazeArmSuppressed = false;
             skidRng = new System.Random(runSeed * 31 + 7);
+            evadeRng = new System.Random(runSeed * 53 + 5);
+            branchRng = new System.Random(runSeed * 71 + 13);
             skidIn = 1.5f;
+            branchIn = 1f;
+            qte.Reset(runSeed * 17 + 3);
+            thrower.Reset();
+            trails.Reset();
+            track.SetWetness(0f);
+            paidRespawns = 0;
+            freeRespawnUsed = false;
+            Evasions = 0;
+            pickupTarget = null;
+            pickupLost = 0f;
+            ApplyTraits();
             rack?.Reset();
             sound?.SetRain(0f);
             gameOverPanel.Visible = false;
@@ -459,6 +514,12 @@ namespace LastLight
             endReason = "";
             autopilotRetry = 0f;
             track.Scroll(0f, 0f, 0, 20f);
+        }
+
+        /// <summary>The traits the driven vehicle carries: Visibility widens the scout light now; Controls and Evasion apply as they come up.</summary>
+        void ApplyTraits()
+        {
+            scout.RadiusScale = TraitCatalog.VisibilityScale(progress.ActiveTraitLevel(Trait.Visibility));
         }
 
         /// <summary>Advances the whole simulation by dt. Public so tests can drive it in edit mode.</summary>
@@ -512,6 +573,7 @@ namespace LastLight
 
             bool running = State == RunState.Running;
             Ray? gazeLocal = scout.TryGetLocalRay(out Vector3 gro, out Vector3 grd) ? new Ray(gro, grd) : (Ray?)null;
+            interventions.GazeArmSuppressed = qte.WantsGaze;
             interventions.Tick(dt, left, right, handsAvailable, car, track.hazards, intents, running, gazeLocal);
 
             if (running) Simulate(dt);
@@ -531,6 +593,7 @@ namespace LastLight
                 if (onCliff && track.OverAbyss(car.x, carS)) FallIntoAbyss();
                 else if (wasOnCliff && !onCliff) Log("Crossed a cliff road");
                 wasOnCliff = onCliff;
+                TrackTwinStrip(carS, onCliff);
             }
             car.UpdateFall(dt);
             car.Tick(running ? dt : 0f, CurrentTargetSpeed(running), time, boostTimer > 0f, slope);
@@ -541,53 +604,102 @@ namespace LastLight
             TickStorage(dt, running);
             TickPickups(running ? dt : 0f);
             shooterSystem.Tick(dt, time, running, track, car, Distance, TrackGenerator.StageAt(Distance));
+            thrower.Tick(running ? dt : 0f, running, track.shooters, p => Diorama.InsideDisk(p) || scout.IsLit(p), gazeLocal,
+                new Vector3(car.ScreenX, car.RoofY + 0.3f, car.Z), HeadLocal);
+            TickRepair(dt, running, gazeLocal);
             TickGear(running ? dt : 0f);
             // Debris keeps settling on the run-over screen, so a final crash plays out.
             fx.Tick(running || State == RunState.GameOver ? dt : 0f);
 
             Vector3 headLocal = new Vector3(car.ScreenX, 0.7f, car.Z + 1.4f);
             float reveal = flashTimer > 0f ? Mathf.Clamp01(flashTimer / 0.5f) : 0f;
-            diorama.PushShaderGlobals(scout.Patch, GazeScout.PatchRadius, scout.Intensity, headLocal, new Vector3(0f, -0.12f, 1f), reveal);
+            diorama.PushShaderGlobals(scout.Patch, scout.Radius, scout.Intensity, headLocal, new Vector3(0f, -0.12f, 1f), reveal);
             UpdateHud(dt);
         }
 
         /// <summary>
-        /// Weather encounters and their effects: fog smothers the scout light (the flashlight still cuts through),
-        /// and a storm makes the jeep twitchy, amplifying steering and throwing in random skids.
+        /// Weather encounters and their effects: fog smothers the scout light (the flashlight still cuts through);
+        /// a storm soaks the road into puddles and blows broken branches across it, more often the further the run
+        /// has gone; snow ices the road, so the jeep slides, steering is amplified and it skids at random. The
+        /// Controls trait steadies it on snow.
         /// </summary>
         void TickWeather(float dt, bool running)
         {
             float reveal = flashTimer > 0f ? Mathf.Clamp01(flashTimer / 0.5f) : 0f;
-            if (weatherEnabled || weather.Active) weather.Tick(dt, running, TrackGenerator.StageAt(Distance), time, reveal);
+            if (weatherEnabled || weather.Active) weather.Tick(dt, running, Distance, TrackGenerator.StageAt(Distance), time, reveal);
             scout.Fog = weather.FogAmount;
             float storm = weather.StormAmount;
-            car.slip = storm;
-            interventions.SteerGain = 1f + StormSteerGain * storm;
             sound?.SetRain(running ? storm * 0.35f : 0f);
+            track.SetWetness(weather.Wetness);
+
+            float stability = TraitCatalog.ControlsStability(progress.ActiveTraitLevel(Trait.Controls));
+            float snow = weather.SnowAmount * (1f - stability);
+            car.slip = snow;
+            interventions.SteerGain = 1f + SnowSteerGain * snow;
+            float carS = Distance + car.boostOffset;
+            trails.Tick(weather.SnowCover, running && !car.falling, carS, car.x, Distance, track);
             if (!running) return;
-            if (storm > 0.3f)
+
+            // Storm: broken branches blow across the road, closer together as the run goes on.
+            if (storm > 0.5f)
+            {
+                branchIn -= dt;
+                if (branchIn <= 0f)
+                {
+                    float t = Mathf.Clamp01((Distance - WeatherSystem.FirstFrom) / 1200f);
+                    branchIn = Mathf.Lerp(BranchGapStart, BranchGapEnd, t) * (0.75f + (float)branchRng.NextDouble() * 0.5f);
+                    float[] sizes = { 0.55f, 0.85f, 1.2f };
+                    float size = sizes[branchRng.Next(sizes.Length)];
+                    int dir = branchRng.NextDouble() < 0.5 ? -1 : 1;
+                    float speed = 2.6f + (float)branchRng.NextDouble() * 1.8f;
+                    float ahead = 10f + (float)branchRng.NextDouble() * 6f;
+                    var h = track.SpawnBlownBranch(carS + ahead, dir, size, speed, branchRng);
+                    if (h != null) Log($"A {(size < 0.7f ? "small" : size < 1f ? "medium" : "large")} branch blows across the road from the {(dir > 0 ? "left" : "right")}, {ahead:0} units ahead");
+                }
+            }
+            else branchIn = Mathf.Max(branchIn, 0.6f);
+
+            // Snow: random skids on the ice.
+            if (snow > 0.3f)
             {
                 skidIn -= dt;
                 if (skidIn <= 0f)
                 {
                     skidIn = SkidGapMin + (float)skidRng.NextDouble() * (SkidGapMax - SkidGapMin);
                     float dir = skidRng.NextDouble() < 0.5 ? -1f : 1f;
-                    float speed = (SkidSpeedMin + (float)skidRng.NextDouble() * (SkidSpeedMax - SkidSpeedMin)) * storm;
+                    float speed = (SkidSpeedMin + (float)skidRng.NextDouble() * (SkidSpeedMax - SkidSpeedMin)) * snow;
                     // Cliff roads are unforgiving enough: skids there are gentler.
-                    if (track.OnCliffStretch(Distance + car.boostOffset)) speed *= 0.5f;
+                    if (track.OnCliffStretch(carS)) speed *= 0.5f;
                     car.Skid(dir * speed, SkidSeconds);
                     sound?.Play(sound.skid, 0.5f);
-                    Log($"Skidded {(dir < 0f ? "left" : "right")} on the wet road");
+                    Log($"Skidded {(dir < 0f ? "left" : "right")} on the icy road");
                 }
             }
             else skidIn = Mathf.Max(skidIn, 0.8f);
+        }
+
+        /// <summary>
+        /// On the last health bar a wrench floats over the jeep; a half-second look starts three gaze dots, and
+        /// clearing them gives a bar back.
+        /// </summary>
+        void TickRepair(float dt, bool running, Ray? gazeLocal)
+        {
+            bool available = running && car.health == 1 && !car.falling;
+            if (qte.Tick(running ? dt : 0f, available, new Vector3(car.ScreenX, car.RoofY, car.Z), gazeLocal, HeadLocal))
+            {
+                car.health = Mathf.Min(startHealth, car.health + 1);
+                sound?.Play(sound.powerup);
+                Log($"Repair complete: health {car.health}");
+            }
         }
 
         /// <summary>The storage compartment on the player's right: a second's look uses a stored item.</summary>
         void TickStorage(float dt, bool running)
         {
             if (rack == null) return;
-            int use = rack.Tick(dt, running ? WorldGazeRay() : null, running);
+            // The autopilot's stand-in gaze looks straight down on its targets; it isn't a real look at the dash.
+            bool realGaze = !autopilot || scout.ScriptedWorldRay.HasValue;
+            int use = rack.Tick(dt, running && realGaze ? WorldGazeRay() : null, running);
             if (use < 0) return;
             UseStoredItem(use);
         }
@@ -611,7 +723,7 @@ namespace LastLight
             PickupKind.Flashlight => flashTimer > 0f,
             PickupKind.Turret => turret.Active,
             PickupKind.Shovel => shovel.Active,
-            _ => false
+            _ => false      // a repair is instant
         };
 
         void TickMenu(float dt, bool select)
@@ -688,19 +800,22 @@ namespace LastLight
         }
 
         /// <summary>
-        /// Spends coins to carry on the same run. Each respawn in a run costs twice the last.
+        /// Spends coins to carry on the same run. Each paid respawn in a run costs twice the last; the Angel
+        /// Transponder's first respawn in a run is free.
         /// The jeep is put back on the road with full health and a full lead on the horde, the road just
         /// ahead is cleared, and it blinks through a short grace period.
         /// </summary>
         public bool TryRespawn()
         {
             int cost = NextRespawnCost;
+            bool free = FreeRespawnAvailable;
             if (State != RunState.GameOver || !progress.Spend(cost))
             {
                 Log($"Respawn refused: costs {cost}, bank {progress.Coins}");
                 return false;
             }
             respawnsThisRun++;
+            if (free) freeRespawnUsed = true; else paidRespawns++;
             float carS = Distance + car.boostOffset;
 
             // Back onto the road: the escape gap of a dead end we were trapped in, otherwise the road centre.
@@ -709,7 +824,7 @@ namespace LastLight
             foreach (var h in track.hazards)
                 if (h != null && h.alive && h.kind == HazardKind.DeadEnd && Mathf.Abs(h.DioramaLocal.z - car.Z) < 4f) wall = h;
             if (wall != null) roadX = wall.escapeX;
-            else if (car.falling || track.OnCliffStretch(carS)) roadX = 0f;
+            else if (car.falling || track.OnCliffStretch(carS)) roadX = track.SafeRoadX(carS);
             track.Limits(carS, car.branch, out float min, out float max);
             if (wall == null) roadX = Mathf.Clamp(roadX, min, max);
             car.Revive(roadX);
@@ -732,7 +847,9 @@ namespace LastLight
             gameOverTime = 0f;
             State = RunState.Running;
             sound?.Play(sound.powerup);
-            Log($"Respawned for {cost} coins (respawn {respawnsThisRun}), bank {progress.Coins}, next costs {NextRespawnCost}");
+            Log(free ? $"Respawned free with the Angel Transponder (respawn {respawnsThisRun}), next costs {NextRespawnCost}"
+                     : $"Respawned for {cost} coins (respawn {respawnsThisRun}), bank {progress.Coins}, next costs {NextRespawnCost}");
+            FitStartingGear();
             return true;
         }
 
@@ -743,8 +860,11 @@ namespace LastLight
             if (killed != null) KillShooter(killed);
         }
 
-        void KillShooter(ShooterZombie z)
+        void KillShooter(ShooterZombie z) => KillShooter(z, "Turret killed");
+
+        void KillShooter(ShooterZombie z, string how)
         {
+            if (z == null || !z.alive) return;
             z.alive = false;
             z.windup = 0f;
             z.StopGlow();
@@ -753,7 +873,7 @@ namespace LastLight
             fx.Splash(z.chunk.root, local, Palette.Acid, 10, 4f, 0.2f, 0.6f);
             fx.FadeOut(z.transform, 0.9f, Vector3.down * 0.8f, 160f);
             sound?.Play(sound.smash, 0.5f);
-            Log($"Turret killed a shooter {z.DioramaLocal.z:0} units ahead{(Diorama.InsideDisk(z.DioramaLocal) || scout.IsLit(z.DioramaLocal) ? "" : " (unseen)")}");
+            Log($"{how} a shooter {z.DioramaLocal.z:0} units ahead{(Diorama.InsideDisk(z.DioramaLocal) || scout.IsLit(z.DioramaLocal) ? "" : " (unseen)")}");
         }
 
         /// <summary>Acid reached the jeep. A shield blocks it; otherwise the jeep slows hard for a moment.</summary>
@@ -798,6 +918,20 @@ namespace LastLight
                 Log($"Start pressed on the tutorial after {tutorialTime:0.0} s");
                 StartRunning();
             }
+        }
+
+        /// <summary>Notes which strip of a twin cliff road the jeep is on, and when it switches across the ridge.</summary>
+        void TrackTwinStrip(float carS, bool onCliff)
+        {
+            CliffRun twin = onCliff ? track.TwinAt(carS) : null;
+            if (twin == null || car.falling) { twinStrip = 0; return; }
+            float gapMid = (twin.leftHalf - twin.rightHalf) * 0.5f;
+            int strip = car.x < gapMid ? -1 : 1;
+            if (twinStrip == 0)
+                Log($"Took the {(strip < 0 ? "left" : "right")} strip of a twin cliff road: {(twin.deadSide == strip ? "dead end" : "safe")}");
+            else if (strip != twinStrip && twin.OnRidge(carS))
+                Log($"Switched strips on the ridge to the {(strip < 0 ? "left" : "right")}: {(twin.deadSide == strip ? "dead end" : "safe")}");
+            twinStrip = strip;
         }
 
         /// <summary>Road-relative X of a disk-local point: 0 is the road centre at that point's place along the road.</summary>
@@ -931,7 +1065,7 @@ namespace LastLight
                     Shatter(h, push);
                     bool broke = shovel.UseHit(fx, h.chunk.root, h.transform.localPosition + Vector3.up * 0.5f, new Vector3(0f, 3f, car.speed * 0.6f));
                     sound?.Play(sound.smash);
-                    Log($"Shovel smashed a {(h.kind == HazardKind.Boulder ? "boulder" : "fallen tree")}, {shovel.HitsLeft} hits left{(broke ? ": shovel broke" : "")}");
+                    Log($"Shovel smashed a {ObstacleName(h)}, {shovel.HitsLeft} hits left{(broke ? ": shovel broke" : "")}");
                     continue;
                 }
 
@@ -967,7 +1101,6 @@ namespace LastLight
                 // Rocks and fallen trees: the jeep smashes through, losing most of its speed. Rocks shatter,
                 // trees break into pieces, and the pieces tumble and fade away.
                 // A shield, like respawn grace, ploughs straight through with no slowdown and no damage.
-                bool boulder = h.kind == HazardKind.Boulder;
                 float before = car.speed;
                 bool protectedHit = car.invulnerable > 0f || car.shield;
                 if (!protectedHit)
@@ -977,21 +1110,45 @@ namespace LastLight
                 }
                 Shatter(h, new Vector3((hRel - car.x) * 2.5f, 1f, before * 0.75f));
                 sound?.Play(sound.smash);
-                string what = boulder ? "boulder" : "fallen tree";
+                string what = ObstacleName(h);
                 if (car.shield) Log($"Shield smashed through a {what} without slowing");
                 else if (car.invulnerable > 0f) Log($"Smashed a {what} during respawn grace");
+                else if (obstaclesDamage && Evaded())
+                {
+                    Evasions++;
+                    Log($"Evaded: smashed through a {what} without damage, slowed to {car.speed * 10f:0} km/h");
+                }
                 else if (obstaclesDamage) Damage($"Smashed through a {what}, slowed to {car.speed * 10f:0} km/h");
                 else Log($"Smashed through a {what}, slowed to {car.speed * 10f:0} km/h");
             }
         }
 
-        /// <summary>Breaks a rock or fallen tree into tumbling pieces and removes it from the road.</summary>
+        static string ObstacleName(Hazard h) => h.kind switch
+        {
+            HazardKind.Boulder => "boulder",
+            HazardKind.Barricade => "barricade",
+            _ => h.Blown ? "blown branch" : "fallen tree"
+        };
+
+        /// <summary>The Evasion trait's roll: a chance that a crash costs no health. Shields and shovels never get here.</summary>
+        bool Evaded()
+        {
+            float chance = TraitCatalog.EvasionChance(progress.ActiveTraitLevel(Trait.Evasion));
+            return chance > 0f && evadeRng.NextDouble() < chance;
+        }
+
+        /// <summary>Breaks a rock, fallen tree or barricade into tumbling pieces and removes it from the road.</summary>
         void Shatter(Hazard h, Vector3 push)
         {
             if (h == null || !h.alive) return;
             Transform parent = h.chunk.root;
             Vector3 at = h.transform.localPosition;
-            if (h.kind == HazardKind.Boulder)
+            if (h.kind == HazardKind.Barricade)
+            {
+                fx.Burst(parent, at + Vector3.up * 0.6f, DebrisKind.Metal, 9, 0.8f, push, h.HalfWidth * 0.8f);
+                fx.Burst(parent, at + Vector3.up * 0.3f, DebrisKind.Rock, 5, 0.6f, push, h.HalfWidth * 0.6f);
+            }
+            else if (h.kind == HazardKind.Boulder)
             {
                 fx.Burst(parent, at, DebrisKind.Rock, 11, h.radius * 0.9f, push, 1.1f);
                 fx.Splash(parent, at, new Color(0.5f, 0.45f, 0.38f, 0.35f), 6, 2.5f, 0.6f, 0.7f, 0.5f);
@@ -999,7 +1156,7 @@ namespace LastLight
             else
             {
                 int pieces = Mathf.RoundToInt(5 + h.HalfWidth * 3f);
-                fx.Burst(parent, at + Vector3.up * 0.3f, DebrisKind.Wood, pieces, 1f, push, h.HalfWidth * 0.8f);
+                fx.Burst(parent, at + Vector3.up * 0.3f, DebrisKind.Wood, pieces, h.Blown ? h.HalfWidth / 1.3f : 1f, push, h.HalfWidth * 0.8f);
             }
             if (h.marker != null) h.marker.gameObject.SetActive(false);
             h.Smash();
@@ -1062,8 +1219,19 @@ namespace LastLight
                 }
                 if (!visible || !hasRay) continue;
                 float dist = Vector3.Cross(rayDir, pos - rayOrigin).magnitude;
-                if (dist < bestDist) { bestDist = dist; best = p; }
+                // The powerup already being stared at keeps a wider margin, so eye jitter doesn't restart the count.
+                float limit = p == pickupTarget ? PickupKeepRadius : PickupGazeRadius;
+                if (dist < limit && dist / limit < bestDist / PickupGazeRadius) { bestDist = dist / limit * PickupGazeRadius; best = p; }
             }
+            // A blink or a twitch off the target holds the count for a moment instead of dropping it.
+            bool holding = false;
+            if (best == null && pickupTarget != null && pickupTarget.alive && hasRay && dt > 0f && (pickupLost += dt) <= PickupLoseGrace)
+            {
+                best = pickupTarget;
+                holding = true;
+            }
+            else if (best != null) pickupLost = 0f;
+            pickupTarget = best;
 
             Pickup collected = null;
             for (int i = 0; i < pickups.Count; i++)
@@ -1072,14 +1240,14 @@ namespace LastLight
                 if (p == null || !p.alive) continue;
                 if (p == best)
                 {
-                    p.dwell += dt;
+                    if (!holding) p.dwell += dt;
                     if (p.dwell >= p.DwellSeconds) collected = p;
                 }
                 else p.dwell = Mathf.Max(0f, p.dwell - dt * 0.8f);
             }
 
             UpdateDwellRing(best);
-            if (collected != null) Collect(collected);
+            if (collected != null) { Collect(collected); pickupTarget = null; }
         }
 
         void UpdateDwellRing(Pickup target)
@@ -1098,6 +1266,7 @@ namespace LastLight
                 PickupKind.Flashlight => Palette.LightBeam,
                 PickupKind.Turret => Palette.TurretRed,
                 PickupKind.Shovel => Palette.ShovelYellow,
+                PickupKind.Repair => Palette.RepairGreen,
                 _ => Palette.CoinGold
             };
             c.a = 1f;
@@ -1151,6 +1320,16 @@ namespace LastLight
                     sound?.Play(sound.powerup);
                     Log("Shovel collected");
                     break;
+                case PickupKind.Repair:
+                    sound?.Play(sound.powerup);
+                    if (car.health < startHealth)
+                    {
+                        car.health++;
+                        car.hitFlash = 0f;
+                        Log($"Repairs collected: health {car.health}");
+                    }
+                    else Log("Repairs collected: health already full");
+                    break;
             }
         }
 
@@ -1199,14 +1378,17 @@ namespace LastLight
                 if (State == RunState.Menu || State == RunState.Tutorial) pendingStart = true;
                 else pendingSelect = true;
             }
-            // Editor-only weather keys: J fog, L storm, 1-3 use a stored item.
+            // Editor-only weather keys: J fog, L storm, O snow, 1-4 use a stored item, X a hit of damage.
             if (Application.isEditor && State == RunState.Running)
             {
                 if (kb.jKey.wasPressedThisFrame) weather.Force(WeatherKind.Fog);
                 if (kb.lKey.wasPressedThisFrame) weather.Force(WeatherKind.Storm);
+                if (kb.oKey.wasPressedThisFrame) weather.Force(WeatherKind.Snow);
                 if (kb.digit1Key.wasPressedThisFrame) UseStoredItem(0);
                 if (kb.digit2Key.wasPressedThisFrame) UseStoredItem(1);
                 if (kb.digit3Key.wasPressedThisFrame) UseStoredItem(2);
+                if (kb.digit4Key.wasPressedThisFrame) UseStoredItem(3);
+                if (kb.xKey.wasPressedThisFrame) Damage("Debug hit");
             }
             if (kb.hKey.wasPressedThisFrame && State == RunState.Menu) pendingHowTo = true;
             if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame) pendingSelect = true;
@@ -1301,6 +1483,37 @@ namespace LastLight
                 }
                 if (h.kind == HazardKind.FallenTree && dz < nearestDz) { nearestDz = dz; nearest = h; }
             }
+            // A barricade row across three lanes: head for the free lane nearest the jeep (if all three are shut, plough on).
+            float barDz = float.MaxValue;
+            bool barricadeAhead = false;
+            foreach (var h in track.hazards)
+            {
+                if (h == null || !h.alive || h.kind != HazardKind.Barricade) continue;
+                float dz = h.DioramaLocal.z - car.Z;
+                if (dz > -Vehicle.HalfLength - 0.5f && dz < 16f && dz < barDz) barDz = dz;
+            }
+            if (barDz < float.MaxValue && (nearest == null || barDz < nearestDz))
+            {
+                var shut = new bool[3];
+                foreach (var h in track.hazards)
+                {
+                    if (h == null || !h.alive || h.kind != HazardKind.Barricade) continue;
+                    Vector3 p = h.DioramaLocal;
+                    if (Mathf.Abs(p.z - car.Z - barDz) > 1f) continue;
+                    int lane = Mathf.Clamp(Mathf.RoundToInt((p.x - roadOffsetAtZ(p.z)) / TrackGenerator.LaneWidth), -1, 1);
+                    shut[lane + 1] = true;
+                }
+                float bestLane = float.NaN;
+                for (int lane = -1; lane <= 1; lane++)
+                {
+                    if (shut[lane + 1]) continue;
+                    float x = lane * TrackGenerator.LaneWidth;
+                    if (float.IsNaN(bestLane) || Mathf.Abs(x - car.x) < Mathf.Abs(bestLane - car.x)) bestLane = x;
+                }
+                if (!float.IsNaN(bestLane)) desired = bestLane;
+                nearest = null;
+                barricadeAhead = true;
+            }
             // Dodge one tree at a time, nearest first, the way a player would.
             if (nearest != null)
             {
@@ -1316,7 +1529,7 @@ namespace LastLight
                 }
             }
             // Drive through coins when nothing else needs steering.
-            if (nearest == null && fork == null && !track.OnCliffStretch(carS))
+            if (nearest == null && fork == null && !barricadeAhead && !track.OnCliffStretch(carS))
             {
                 float coinDz = float.MaxValue;
                 foreach (var p in track.pickups)
@@ -1331,7 +1544,7 @@ namespace LastLight
             }
             // Steer clear of acid that's about to land or still wet, like a player would,
             // unless a fallen tree close ahead needs the steering first.
-            if ((nearest == null || nearestDz > 9f) && shooterSystem.NearestThreat(carS, 16f, out float acidX))
+            if ((nearest == null || nearestDz > 9f) && !barricadeAhead && track.TwinAt(carS) == null && track.TwinAt(carS + 8f) == null && shooterSystem.NearestThreat(carS, 16f, out float acidX))
             {
                 float clear = ShooterSystem.PuddleRadius * 0.7f + Vehicle.HalfWidth + 0.7f;
                 // On a cliff road the limits reach past the edge, so dodge only within the road itself.
@@ -1349,9 +1562,30 @@ namespace LastLight
                     else if (leftOk) desired = toLeft;
                 }
             }
+            AutopilotTwinCliff(carS, ref desired);
             if (autopilotMode == AutopilotMode.FallOffCliffs && track.OnCliffStretch(carS)) desired = 20f;
             i.setTarget = desired;
             return i;
+        }
+
+        /// <summary>
+        /// Twin cliff roads: pick the safe strip before the road splits and stay on it. The twin test modes take the
+        /// dead strip instead; TwinRidgeEscape then switches across at the ridge, TwinDeadStrip rides it to the drop.
+        /// </summary>
+        void AutopilotTwinCliff(float carS, ref float desired)
+        {
+            CliffRun twin = track.TwinAt(carS + 6f) ?? track.TwinAt(carS);
+            if (twin == null) return;
+            bool seekDead = twin.deadSide != 0 && (autopilotMode == AutopilotMode.TwinDeadStrip || autopilotMode == AutopilotMode.TwinRidgeEscape);
+            int target = twin.SafeSide;
+            if (seekDead && (autopilotMode == AutopilotMode.TwinDeadStrip || carS < twin.ridgeS - CliffRun.RidgeLength * 0.5f + 0.5f)) target = twin.deadSide;
+            float look = carS + 1.5f;
+            bool split = track.OnCliffStretch(carS);
+            float gapMid = (twin.leftHalf - twin.rightHalf) * 0.5f;
+            int now = car.x < gapMid ? -1 : 1;
+            // Once split, the strips only meet on the ridge.
+            int lane = !split || (twin.OnRidge(carS) && twin.OnRidge(carS + 3f)) ? target : now;
+            if (track.TwinLane(look, lane, out float c, out _) || track.TwinLane(look, now, out c, out _)) desired = c;
         }
 
         void AutopilotGaze()
@@ -1424,8 +1658,8 @@ namespace LastLight
             // The instrument cluster floats beyond the far rim, at the top of the player's view.
             UISprite.LoadMaterials(out Material gaugeAlpha, out Material gaugeAdd);
             gauges = new DashboardCluster(diorama.transform, glowMaterial, gaugeAlpha, gaugeAdd, HeadLocal);
-            // The storage compartment floats on the player's right.
-            rack = new StorageRack(diorama.transform, pickupMaterial, glowMaterial, gaugeAlpha, gaugeAdd, progress, HeadLocal);
+            // The storage compartment is built into the dash, on the right of the health dial.
+            rack = new StorageRack(gauges.root, DashboardCluster.StorageCenter, pickupMaterial, glowMaterial, gaugeAlpha, gaugeAdd, progress);
 
             var bannerGo = new GameObject("Banner").transform;
             bannerGo.SetParent(diorama.transform, false);
@@ -1470,39 +1704,29 @@ namespace LastLight
             rack.Visible = show;
             if (!show) return;
 
-            float topSpeed = maxCruiseSpeed * BoostSpeedMultiplier;
-            gauges.Set(Gauge.Speed, car.speed / topSpeed, $"{car.speed * 10f:0} KM/H");
+            gauges.SetHealth(car.health, startHealth);
 
-            float gapFrac = Gap / maxGap;
-            gauges.Set(Gauge.Horde, gapFrac, gapFrac > 0.6f ? "SAFE" : gapFrac > 0.3f ? "CLOSE" : "DANGER");
-
-            gauges.Set(Gauge.Health, car.health / (float)Mathf.Max(startHealth, 1), $"{Mathf.Max(car.health, 0)}/{startHealth}");
-
-            // Distance fills toward your best run, then turns gold once you pass it.
+            // Distance turns gold once you pass your best run.
             bool newBest = Best > 0f && Distance > Best;
-            gauges.Set(Gauge.Distance, Distance / Mathf.Max(Best, 300f), newBest ? $"{Distance:0} M  BEST!" : $"{Distance:0} M");
-            gauges.SetColor(Gauge.Distance, newBest ? DashboardCluster.Colors[(int)Gauge.Coins] : DashboardCluster.Colors[(int)Gauge.Distance]);
+            gauges.SetDistance(newBest ? $"{Distance:0} M  BEST!" : $"{Distance:0} M", newBest);
+            gauges.SetCoins(Coins > 0 ? $"{progress.Coins:N0}  +{Coins}" : $"{progress.Coins:N0}");
+            gauges.SetWeather(weather.Kind, weather.Duration > 0f ? weather.TimeLeft / weather.Duration : 0f, weather.TimeLeft);
 
-            // Coins fill toward the cheapest vehicle still locked in the garage.
-            int goal = 0;
-            for (int i = 1; i < VehicleCatalog.Count; i++)
-                if (!progress.IsUnlocked(i) && (goal == 0 || VehicleCatalog.All[i].cost < goal)) goal = VehicleCatalog.All[i].cost;
-            gauges.Set(Gauge.Coins, goal > 0 ? progress.Coins / (float)goal : 1f, Coins > 0 ? $"{progress.Coins:N0}  +{Coins}" : $"{progress.Coins:N0}");
-
-            // Warning lamps: one per powerup and weather, lit with what's left.
+            // Warning lamps: one per timed powerup, lit with what's left.
             gauges.SetLamp(Lamp.Shield, car.shield, $"{Mathf.CeilToInt(car.shieldTime)}S");
             gauges.SetLamp(Lamp.Boost, boostTimer > 0f, $"{Mathf.CeilToInt(boostTimer)}S");
             gauges.SetLamp(Lamp.Light, flashTimer > 0f, $"{Mathf.CeilToInt(flashTimer)}S");
             gauges.SetLamp(Lamp.Turret, turret.Active, $"{Mathf.CeilToInt(turret.TimeLeft)}S");
             gauges.SetLamp(Lamp.Shovel, shovel.Active, $"x{shovel.HitsLeft}");
-            gauges.SetLamp(Lamp.Fog, weather.Kind == WeatherKind.Fog, $"{Mathf.CeilToInt(weather.TimeLeft)}S");
-            gauges.SetLamp(Lamp.Storm, weather.Kind == WeatherKind.Storm, $"{Mathf.CeilToInt(weather.TimeLeft)}S");
             string alert = car.trapped ? "TRAPPED!"
                 : car.Stalled ? "STALLED"
                 : car.acid > 0f ? "ACID! SLOWED"
                 : car.invulnerable > 0f ? "RESPAWNED"
                 : car.scraping ? "SCRAPING THE EDGE"
-                : car.Skidding ? "SKIDDING!"
+                : car.Skidding ? "SKIDDING ON ICE!"
+                : Gap < maxGap * 0.3f ? "HORDE CLOSE!"
+                : qte.Phase == RepairPhase.Wrench ? "LOOK AT THE WRENCH TO REPAIR"
+                : qte.Phase == RepairPhase.Dots ? $"REPAIRING: LOOK AT THE DOTS {qte.DotIndex + 1}/{RepairQte.DotCount}"
                 : scout.Fogged ? "FOG: SCOUTING BLOCKED" : "";
             gauges.SetAlert(alert);
             gauges.Tick(dt);

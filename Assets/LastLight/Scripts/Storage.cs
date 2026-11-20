@@ -9,11 +9,11 @@ namespace LastLight
     /// </summary>
     public static class StorageCatalog
     {
-        public const int MaxSlots = 3;
+        public const int MaxSlots = 4;
         public const float UseSeconds = 1f;
 
         /// <summary>Items the garage sells, in shop order.</summary>
-        public static readonly PickupKind[] Items = { PickupKind.Shovel, PickupKind.Booster, PickupKind.Turret, PickupKind.Flashlight };
+        public static readonly PickupKind[] Items = { PickupKind.Shovel, PickupKind.Booster, PickupKind.Turret, PickupKind.Flashlight, PickupKind.Repair };
 
         public static bool IsItem(int kind)
         {
@@ -21,17 +21,19 @@ namespace LastLight
             return false;
         }
 
+        /// <summary>Shop prices. Repairs cost the most.</summary>
         public static int Price(PickupKind item) => item switch
         {
-            PickupKind.Shovel => 60,
-            PickupKind.Booster => 40,
-            PickupKind.Turret => 90,
-            PickupKind.Flashlight => 50,
+            PickupKind.Shovel => 180,
+            PickupKind.Booster => 120,
+            PickupKind.Turret => 270,
+            PickupKind.Flashlight => 150,
+            PickupKind.Repair => 420,
             _ => 9999
         };
 
-        /// <summary>Cost to unlock slot index <paramref name="slot"/> (0-based). Slot 0 is free.</summary>
-        public static int SlotCost(int slot) => slot switch { 0 => 0, 1 => 300, _ => 600 };
+        /// <summary>Cost to unlock slot index <paramref name="slot"/> (0-based). Slot 0 is free; slot 3 needs a second vehicle.</summary>
+        public static int SlotCost(int slot) => slot switch { 0 => 0, 1 => 300, 2 => 600, _ => 900 };
 
         public static string Name(PickupKind item) => item switch
         {
@@ -39,6 +41,7 @@ namespace LastLight
             PickupKind.Booster => "SPEED BOOST",
             PickupKind.Turret => "TURRET",
             PickupKind.Flashlight => "FLASHLIGHT",
+            PickupKind.Repair => "REPAIRS",
             _ => item.ToString().ToUpperInvariant()
         };
 
@@ -48,6 +51,7 @@ namespace LastLight
             PickupKind.Booster => "5 S OF SPEED, PULLS AWAY FROM THE HORDE",
             PickupKind.Turret => "10 S OF ROOF GUN AGAINST SPITTERS",
             PickupKind.Flashlight => "5 S OF LIGHT AHEAD, CUTS THROUGH FOG",
+            PickupKind.Repair => "FIXES 1 HEALTH BAR ON THE SPOT",
             _ => ""
         };
 
@@ -57,23 +61,24 @@ namespace LastLight
             PickupKind.Booster => Palette.BoostOrange,
             PickupKind.Turret => Palette.TurretRed,
             PickupKind.Flashlight => Palette.LightBeam,
+            PickupKind.Repair => Palette.RepairGreen,
             _ => Palette.UIIvory
         };
     }
 
     /// <summary>
     /// The garage's storage panel, floating on the other side of the garage from the vehicle panel.
-    /// Three compartment slots across the top (pinch a locked one to unlock it), then the item shop:
-    /// pinch an item to buy it into the first empty slot.
+    /// Four compartment slots across the top (pinch a locked one to unlock it; the fourth needs a second
+    /// vehicle), then the item shop: pinch an item to buy it into the first empty slot.
     /// </summary>
     public sealed class StoragePanel
     {
         public static readonly Vector3 PanelPosition = new Vector3(-17.5f, 9.5f, 1.5f);
-        public const float PanelWidth = 12.5f, PanelHeight = 18f;
-        const float SlotY = 4.4f, SlotSpacing = 3.6f;
-        static readonly Vector2 SlotSize = new Vector2(2.7f, 2.7f);
-        static readonly Vector2 CardSize = new Vector2(11f, 2.4f);
-        const float FirstCardY = 0.2f, CardSpacing = 2.6f;
+        public const float PanelWidth = 12.5f, PanelHeight = 20f;
+        const float SlotY = 5.0f, SlotSpacing = 2.9f;
+        static readonly Vector2 SlotSize = new Vector2(2.4f, 2.4f);
+        static readonly Vector2 CardSize = new Vector2(11f, 2.0f);
+        const float FirstCardY = 1.0f, CardSpacing = 2.15f;
 
         public readonly Transform root;
         readonly Progress progress;
@@ -114,7 +119,7 @@ namespace LastLight
             Texture2D lockTex = UISprite.Load("lock"), coinTex = UISprite.Load("coin");
             for (int i = 0; i < slots.Length; i++)
             {
-                var pos = new Vector2((i - 1) * SlotSpacing, SlotY);
+                var pos = new Vector2((i - 1.5f) * SlotSpacing, SlotY);
                 slots[i] = new GazeButton(root, "Slot " + i, "ring", pos, SlotSize, alphaMat, 3);
                 new UISprite("Slot Back", slots[i].root, UISprite.Load("dot"), SlotSize * 0.86f, alphaMat, 2) { Color = new Color(0.06f, 0.08f, 0.1f, 0.95f) };
                 var icon = MeshBuilder.Spawn("Item", slots[i].root, Pickup.IconMesh(PickupKind.Shovel), solidMat);
@@ -123,7 +128,7 @@ namespace LastLight
                 slotIcons[i] = icon.GetComponent<MeshFilter>();
                 slotLocks[i] = new UISprite("Lock", slots[i].root, lockTex, new Vector2(1.1f, 1.1f), alphaMat, 5);
                 slotCoins[i] = new UISprite("Price Coin", root, coinTex, new Vector2(0.5f, 0.5f), alphaMat, 4) { Position = pos + new Vector2(-0.55f, -1.6f) };
-                slotLabels[i] = new Label(root, "Slot Label " + i, "", 0.38f, TextAnchor.MiddleCenter, ivory, pos + new Vector2(0f, -1.75f), 22);
+                slotLabels[i] = new Label(root, "Slot Label " + i, "", 0.32f, TextAnchor.MiddleCenter, ivory, pos + new Vector2(0f, -1.55f), 22);
             }
 
             new Label(root, "Shop Caption", "BUY ITEMS", 0.5f, TextAnchor.MiddleLeft, amber, new Vector2(-5.3f, FirstCardY + 1.75f), 22);
@@ -135,10 +140,10 @@ namespace LastLight
                 cards[i] = new GazeButton(root, "Item " + item, "card", pos, CardSize, alphaMat, 1);
                 var icon = MeshBuilder.Spawn("Icon", cards[i].root, Pickup.IconMesh(item), solidMat);
                 icon.transform.localPosition = new Vector3(-4.35f, 0f, -0.6f);
-                icon.transform.localScale = Vector3.one * 0.75f;
+                icon.transform.localScale = Vector3.one * 0.62f;
                 cardIcons[i] = icon.transform;
-                new Label(cards[i].root, "Name", StorageCatalog.Name(item), 0.55f, TextAnchor.MiddleLeft, ivory, new Vector2(-3.4f, 0.38f), 22);
-                new Label(cards[i].root, "Blurb", StorageCatalog.Blurb(item), 0.27f, TextAnchor.MiddleLeft, new Color(0.8f, 0.76f, 0.66f), new Vector2(-3.4f, -0.42f), 22);
+                new Label(cards[i].root, "Name", StorageCatalog.Name(item), 0.5f, TextAnchor.MiddleLeft, ivory, new Vector2(-3.4f, 0.32f), 22);
+                new Label(cards[i].root, "Blurb", StorageCatalog.Blurb(item), 0.25f, TextAnchor.MiddleLeft, new Color(0.8f, 0.76f, 0.66f), new Vector2(-3.4f, -0.36f), 22);
                 new UISprite("Coin", cards[i].root, coinTex, new Vector2(0.6f, 0.6f), alphaMat, 4) { Position = new Vector2(3.55f, 0.3f) };
                 cardPrices[i] = new Label(cards[i].root, "Price", StorageCatalog.Price(item).ToString(), 0.5f, TextAnchor.MiddleLeft, ivory, new Vector2(3.95f, 0.32f), 24);
             }
@@ -183,6 +188,7 @@ namespace LastLight
             {
                 if (f < progress.StorageSlots) { Say(progress.SlotItem(f) == null ? "EMPTY: BUY AN ITEM BELOW" : "USE IT IN A RUN", log, null); return true; }
                 if (f != progress.StorageSlots) { refused = true; Say("UNLOCK THE SLOTS IN ORDER", log, "Storage: slots unlock in order"); return true; }
+                if (f == StorageCatalog.MaxSlots - 1 && !progress.FourthSlotAllowed) { refused = true; Say("UNLOCK A 2ND VEHICLE FIRST", log, "Storage: the 4th slot needs a second vehicle"); return true; }
                 int cost = StorageCatalog.SlotCost(f);
                 if (progress.TryUnlockSlot())
                 {
@@ -236,13 +242,14 @@ namespace LastLight
                 }
                 slotLocks[i].Visible = !open;
                 bool next = i == progress.StorageSlots;
-                slotCoins[i].Visible = !open && next;
+                bool barred = i == StorageCatalog.MaxSlots - 1 && !progress.FourthSlotAllowed;
+                slotCoins[i].Visible = !open && next && !barred;
                 slots[i].Enabled = open || next;
                 if (open) { slotLabels[i].Text = item.HasValue ? StorageCatalog.Name(item.Value) : "EMPTY"; slotLabels[i].Position = slots[i].Center + new Vector2(0f, -1.6f); slotLabels[i].Color = item.HasValue ? Palette.UIIvory : new Color(0.6f, 0.58f, 0.52f); }
                 else
                 {
                     int cost = StorageCatalog.SlotCost(i);
-                    slotLabels[i].Text = next ? cost.ToString("N0") : "LOCKED";
+                    slotLabels[i].Text = barred ? "2ND VEHICLE" : next ? cost.ToString("N0") : "LOCKED";
                     slotLabels[i].Position = slots[i].Center + new Vector2(next ? 0.2f : 0f, -1.6f);
                     slotLabels[i].Color = next && !progress.CanAfford(cost) ? Palette.Danger : new Color(0.75f, 0.72f, 0.64f);
                 }
@@ -259,15 +266,16 @@ namespace LastLight
     }
 
     /// <summary>
-    /// The compartment in a run: the unlocked slots float in a column on the player's right, each showing its
-    /// item. Look at a stored item for a second (a ring fills round it) and it's used as if collected.
+    /// The compartment in a run: a 2 x 2 grid of slots built into the dashboard, on the right of the health
+    /// dial. Each shows its item; look at a stored item for a second (a ring fills round it) and it's used as if
+    /// collected. Its own backing plate is depth-tested, so the 3D item icons show in front of it.
     /// </summary>
     public sealed class StorageRack
     {
-        public static readonly Vector3 RackPosition = new Vector3(16.8f, 5.6f, -6.5f);
-        const float SlotSpacing = 3.1f;
-        const float SlotRadius = 1.25f;
-        const float KeepPadding = 0.5f;
+        const float SlotRadius = 1.2f;
+        const float HitPadding = 0.35f, KeepPadding = 0.8f;
+        const float LoseGrace = 0.2f;       // a blink or a twitch of the eyes off the slot doesn't reset it
+        static readonly Vector2[] SlotOffsets = { new Vector2(-1.45f, 1.6f), new Vector2(1.45f, 1.6f), new Vector2(-1.45f, -1.6f), new Vector2(1.45f, -1.6f) };
 
         public readonly Transform root;
         readonly Progress progress;
@@ -283,37 +291,43 @@ namespace LastLight
         readonly float[] flash = new float[StorageCatalog.MaxSlots];
         readonly MeshBuilder mb = new MeshBuilder();
         readonly MaterialPropertyBlock mpb = new MaterialPropertyBlock();
-        float time;
+        float time, lost;
 
         /// <summary>The slot the eyes are on, or -1.</summary>
         public int Looking { get; private set; } = -1;
         public float Dwell(int slot) => dwell[slot];
         public Vector3 SlotWorldCenter(int i) => slots[i].position;
 
-        public StorageRack(Transform parent, Material iconMat, Material glowMat, Material alphaMat, Material addMat, Progress progress, Vector3 headLocal)
+        /// <param name="parent">The dashboard root; the rack shares its plane.</param>
+        /// <param name="center">Where the grid sits on the dashboard, in dashboard units.</param>
+        public StorageRack(Transform parent, Vector2 center, Material iconMat, Material glowMat, Material alphaMat, Material addMat, Progress progress)
         {
             this.progress = progress;
             root = new GameObject("Storage Rack").transform;
             root.SetParent(parent, false);
-            root.localPosition = RackPosition;
-            root.localRotation = Quaternion.LookRotation(RackPosition - headLocal, Vector3.up);
-            new Label(root, "Title", "STORAGE", 0.55f, TextAnchor.MiddleCenter, Palette.UIAmber, new Vector2(0f, SlotSpacing + 1.75f), 22);
-            Texture2D dot = UISprite.Load("dot"), ring = UISprite.Load("ring"), lockTex = UISprite.Load("lock"), spot = UISprite.Load("spot");
+            root.localPosition = new Vector3(center.x, center.y, 0f);
+            root.localRotation = Quaternion.identity;
+            Color ivory = Palette.UIIvory;
+            Color ink = Palette.UIInk; ink.a = 0.97f;
+            Texture2D white = UISprite.Load("white"), dot = UISprite.Load("dot"), ring = UISprite.Load("ring"), lockTex = UISprite.Load("lock"), spot = UISprite.Load("spot");
+            new UISprite("Plate Rim", root, white, new Vector2(6.3f, 7.9f), alphaMat, 0) { Position = new Vector2(0f, 0.35f), Color = new Color(ivory.r, ivory.g, ivory.b, 0.85f) };
+            new UISprite("Plate", root, white, new Vector2(5.95f, 7.55f), alphaMat, 1) { Position = new Vector2(0f, 0.35f), Color = ink };
+            new Label(root, "Title", "STORAGE", 0.4f, TextAnchor.MiddleCenter, Palette.UIAmber, new Vector2(0f, 3.55f), 26, true);
             for (int i = 0; i < slots.Length; i++)
             {
                 var t = new GameObject("Slot " + i).transform;
                 t.SetParent(root, false);
-                t.localPosition = new Vector3(0f, (1 - i) * SlotSpacing, 0f);
+                t.localPosition = new Vector3(SlotOffsets[i].x, SlotOffsets[i].y, 0f);
                 slots[i] = t;
-                new UISprite("Back", t, dot, Vector2.one * SlotRadius * 2f, alphaMat, 1) { Color = new Color(0.05f, 0.07f, 0.09f, 0.85f) };
-                rings[i] = new UISprite("Rim", t, ring, Vector2.one * (SlotRadius * 2f + 0.25f), alphaMat, 2) { Color = Palette.UIIvory };
+                new UISprite("Back", t, dot, Vector2.one * SlotRadius * 2f, alphaMat, 2) { Color = new Color(0.05f, 0.07f, 0.09f, 0.95f) };
+                rings[i] = new UISprite("Rim", t, ring, Vector2.one * (SlotRadius * 2f + 0.2f), alphaMat, 3) { Color = ivory };
                 var icon = MeshBuilder.Spawn("Item", t, Pickup.IconMesh(PickupKind.Shovel), iconMat);
-                icon.transform.localPosition = new Vector3(0f, 0.05f, -0.7f);
-                icon.transform.localScale = Vector3.one * 0.62f;
+                icon.transform.localPosition = new Vector3(0f, 0.12f, -0.7f);
+                icon.transform.localScale = Vector3.one * 0.55f;
                 icons[i] = icon.GetComponent<MeshFilter>();
-                locks[i] = new UISprite("Lock", t, lockTex, new Vector2(0.9f, 0.9f), alphaMat, 3) { Color = new Color(1f, 1f, 1f, 0.6f) };
-                flashes[i] = new UISprite("Use Flash", t, spot, Vector2.one * 4f, addMat, 4);
-                labels[i] = new Label(t, "Label", "", 0.3f, TextAnchor.MiddleCenter, Palette.UIIvory, new Vector2(0f, -SlotRadius - 0.3f), 22);
+                locks[i] = new UISprite("Lock", t, lockTex, new Vector2(0.8f, 0.8f), alphaMat, 4) { Color = new Color(1f, 1f, 1f, 0.6f) };
+                flashes[i] = new UISprite("Use Flash", t, spot, Vector2.one * 3.6f, addMat, 5);
+                labels[i] = new Label(t, "Label", "", 0.24f, TextAnchor.MiddleCenter, ivory, new Vector2(0f, -SlotRadius + 0.32f), 26, true);
                 dwellMeshes[i] = new Mesh { name = "LL_StorageDwell_" + i };
                 dwellRings[i] = MeshBuilder.Spawn("Dwell", t, dwellMeshes[i], glowMat);
                 dwellRings[i].transform.localPosition = new Vector3(0f, 0f, -0.3f);
@@ -331,11 +345,13 @@ namespace LastLight
         {
             for (int i = 0; i < dwell.Length; i++) { dwell[i] = 0f; flash[i] = 0f; }
             Looking = -1;
+            lost = 0f;
         }
 
         /// <summary>
         /// Updates gaze dwell on the slots. Returns the slot whose item should be used this frame, or -1.
-        /// Only stored items count; empty and locked slots ignore the gaze.
+        /// Only stored items count; empty and locked slots ignore the gaze. The slot being looked at keeps a wider
+        /// margin and survives a fifth of a second of lost gaze, so eye jitter doesn't restart the count.
         /// </summary>
         public int Tick(float dt, Ray? gaze, bool allowUse)
         {
@@ -347,19 +363,24 @@ namespace LastLight
                 {
                     if (progress.SlotItem(i) == null) continue;
                     Vector2 c = slots[i].localPosition;
-                    float pad = Looking == i ? KeepPadding : 0.2f;
+                    float pad = Looking == i ? KeepPadding : HitPadding;
                     if ((p - c).magnitude < SlotRadius + pad) { hit = i; break; }
                 }
             }
+            bool counting = hit >= 0;
+            if (hit >= 0) lost = 0f;
+            else if (Looking >= 0 && allowUse && progress.SlotItem(Looking) != null && (lost += dt) <= LoseGrace) hit = Looking;  // hold
+            else lost = 0f;
             Looking = hit;
             int use = -1;
             for (int i = 0; i < slots.Length; i++)
             {
-                if (i == hit) dwell[i] += dt;
+                if (i == hit) { if (counting) dwell[i] += dt; }
                 else dwell[i] = Mathf.Max(0f, dwell[i] - dt * 1.5f);
                 if (dwell[i] >= StorageCatalog.UseSeconds && use < 0) { use = i; dwell[i] = 0f; flash[i] = 0.6f; }
                 if (progress.SlotItem(i) == null && i != use) dwell[i] = 0f;
             }
+            if (use >= 0) { Looking = -1; lost = 0f; }
             Refresh(dt);
             return use;
         }
@@ -376,7 +397,7 @@ namespace LastLight
                     icons[i].sharedMesh = Pickup.IconMesh(item.Value);
                     float look = Looking == i ? 1f : 0f;
                     icons[i].transform.localRotation = Quaternion.Euler(0f, Mathf.Sin(time * 1.4f + i) * 22f, 0f);
-                    icons[i].transform.localScale = Vector3.one * (0.62f + 0.08f * look);
+                    icons[i].transform.localScale = Vector3.one * (0.55f + 0.08f * look);
                 }
                 locks[i].Visible = !open;
                 labels[i].Text = !open ? "" : item.HasValue ? StorageCatalog.Name(item.Value) : "EMPTY";
@@ -393,7 +414,7 @@ namespace LastLight
                 if (showDwell)
                 {
                     mb.Clear();
-                    mb.Arc(Vector3.zero, SlotRadius + 0.12f, SlotRadius + 0.42f, dwell[i] / StorageCatalog.UseSeconds, 40, Color.white);
+                    mb.Arc(Vector3.zero, SlotRadius + 0.1f, SlotRadius + 0.38f, dwell[i] / StorageCatalog.UseSeconds, 40, Color.white);
                     mb.ToMesh(dwellMeshes[i].name, dwellMeshes[i]);
                     Color c = StorageCatalog.Tint(item.Value) * 1.6f; c.a = 1f;
                     mpb.SetColor("_Tint", c);

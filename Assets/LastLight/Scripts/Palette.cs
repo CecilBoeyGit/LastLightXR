@@ -54,6 +54,10 @@ namespace LastLight
         public static readonly Color ShovelSteel = Hex("#8d949c");
         public static readonly Color ShovelYellow = Hex("#e8b53a");
         public static readonly Color Metal = Hex("#55595e");
+        public static readonly Color RepairGreen = Hex("#3fc77a");
+        public static readonly Color SnowWhite = Hex("#e4ebf2");
+        public static readonly Color IceBlue = Hex("#9fd8ff");
+        public static readonly Color Barricade = Hex("#e8e2d4");
 
         // Retro comic menu palette, matched to the title splash.
         public static readonly Color UIInk = Hex("#0d1216");

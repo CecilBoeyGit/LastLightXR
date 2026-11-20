@@ -16,6 +16,10 @@ namespace LastLight
     public class GazeScout
     {
         public const float PatchRadius = 8.5f;
+        /// <summary>Multiplies the scout light's radius: the Visibility trait raises it by 15% or 30%.</summary>
+        public float RadiusScale = 1f;
+        /// <summary>The scout light's radius now, in game units.</summary>
+        public float Radius => PatchRadius * RadiusScale;
         const float HoldAfterLoss = 0.7f;
         const float MemorySeconds = 3.5f;
         const float HeadFallbackDelay = 0.5f;   // long enough to ride out a blink
@@ -76,7 +80,7 @@ namespace LastLight
             if (FlashlightActive) return true;
             if (Fogged) return false;
             var flat = new Vector2(local.x - Patch.x, local.z - Patch.z);
-            return Intensity > 0.3f && flat.magnitude < PatchRadius;
+            return Intensity > 0.3f && flat.magnitude < Radius;
         }
 
         readonly Diorama diorama;
@@ -168,6 +172,7 @@ namespace LastLight
             bool orbOn = ShowOrb && Intensity > 0.01f;
             if (orb.gameObject.activeSelf != orbOn) orb.gameObject.SetActive(orbOn);
             pool.localPosition = Patch + Vector3.up * 0.1f;
+            pool.localScale = new Vector3(RadiusScale, 1f, RadiusScale);
             pool.gameObject.SetActive(Intensity > 0.01f);
             // In fog the pool dims to a grey smudge: the light is still there, it just can't see through.
             float poolLight = Mathf.Lerp(1f, 0.3f, Fogged ? Mathf.Clamp01(Fog) : 0f);
@@ -335,7 +340,7 @@ namespace LastLight
                 if (h == null || !h.alive) continue;
                 Vector3 p = h.DioramaLocal;
                 Vector2 flat = new Vector2(p.x - Patch.x, p.z - Patch.z);
-                bool lit = FlashlightActive || (!Fogged && Intensity > 0.5f && flat.magnitude < PatchRadius * 0.9f);
+                bool lit = FlashlightActive || (!Fogged && Intensity > 0.5f && flat.magnitude < Radius * 0.9f);
                 bool beyondRim = !Diorama.InsideDisk(p);
                 if (lit && beyondRim)
                 {

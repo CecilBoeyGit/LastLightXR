@@ -2,7 +2,7 @@ using UnityEngine;
 
 namespace LastLight
 {
-    public enum PickupKind { Coin, Booster, Shield, Flashlight, Turret, Shovel }
+    public enum PickupKind { Coin, Booster, Shield, Flashlight, Turret, Shovel, Repair }
 
     /// <summary>
     /// A floating pickup. Powerups sit beside the road and are collected by staring at them for 1.5 seconds.
@@ -19,7 +19,7 @@ namespace LastLight
         float spinPhase;
         Vector3 basePos;
         GameObject visual;
-        static Mesh coinMesh, boosterMesh, shieldMesh, flashlightMesh, turretMesh, shovelMesh;
+        static Mesh coinMesh, boosterMesh, shieldMesh, flashlightMesh, turretMesh, shovelMesh, repairMesh;
 
         public const float StareSeconds = 1.5f;
         public float DwellSeconds => StareSeconds;
@@ -39,6 +39,7 @@ namespace LastLight
                 PickupKind.Flashlight => flashlightMesh,
                 PickupKind.Turret => turretMesh,
                 PickupKind.Shovel => shovelMesh,
+                PickupKind.Repair => repairMesh,
                 _ => coinMesh
             };
             var go = new GameObject(kind.ToString());
@@ -88,6 +89,7 @@ namespace LastLight
                 PickupKind.Flashlight => flashlightMesh,
                 PickupKind.Turret => turretMesh,
                 PickupKind.Shovel => shovelMesh,
+                PickupKind.Repair => repairMesh,
                 _ => coinMesh
             };
         }
@@ -159,6 +161,29 @@ namespace LastLight
             mb.Prism(armL, 0.26f, Palette.Metal * 1.3f);
             mb.Prism(armR, 0.26f, Palette.Metal * 1.3f);
             shovelMesh = mb.ToMesh("LL_ShovelIcon"); mb.Clear();
+
+            // Repair: a green gear, eight teeth round a ring with a dark hub.
+            var ring = new Vector2[20];
+            for (int i = 0; i < ring.Length; i++)
+            {
+                float a = i * Mathf.PI * 2f / ring.Length;
+                ring[i] = new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * 0.68f;
+            }
+            mb.Prism(ring, 0.26f, Palette.RepairGreen);
+            for (int i = 0; i < 8; i++)
+            {
+                float a = i * 45f;
+                Vector3 dir = Quaternion.Euler(0f, 0f, a) * Vector3.up;
+                mb.Box(dir * 0.8f, new Vector3(0.3f, 0.34f, 0.26f), Quaternion.Euler(0f, 0f, a), Palette.RepairGreen * 1.15f);
+            }
+            var hub = new Vector2[12];
+            for (int i = 0; i < hub.Length; i++)
+            {
+                float a = i * Mathf.PI * 2f / hub.Length;
+                hub[i] = new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * 0.3f;
+            }
+            mb.Prism(hub, 0.34f, Palette.Metal * 0.8f);
+            repairMesh = mb.ToMesh("LL_RepairIcon"); mb.Clear();
         }
 
         static Vector2 P(float x, float y) => new Vector2(x, y);

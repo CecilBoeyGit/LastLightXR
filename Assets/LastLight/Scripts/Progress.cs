@@ -4,8 +4,9 @@ namespace LastLight
 {
     /// <summary>
     /// What the player keeps between runs: the coin bank, unlocked vehicles, the vehicle being driven,
-    /// each vehicle's colour, and the storage compartment (unlocked slots and the item in each). Saved in PlayerPrefs unless persistence is off (the headless tests turn it off
-    /// so they never touch a player's save).
+    /// each vehicle's colour, the storage compartment (unlocked slots and the item in each) and the traits
+    /// (levels, and which vehicles have paid to carry them). Saved in PlayerPrefs unless persistence is off
+    /// (the headless tests turn it off so they never touch a player's save).
     /// </summary>
     public class Progress
     {
@@ -15,6 +16,8 @@ namespace LastLight
         const string ColorKey = "LastLight.Color.";
         const string SlotsKey = "LastLight.StorageSlots";
         const string SlotItemKey = "LastLight.StorageItem.";
+        const string TraitKey = "LastLight.Trait.";
+        const string LinkKey = "LastLight.TraitsLinked.";
         public const int Empty = -1;
 
         public readonly bool persist;
@@ -23,15 +26,18 @@ namespace LastLight
 
         readonly bool[] unlocked = new bool[VehicleCatalog.Count];
         readonly int[] colors = new int[VehicleCatalog.Count];
-        readonly int[] slotItems = { Empty, Empty, Empty };
+        readonly int[] slotItems = { Empty, Empty, Empty, Empty };
+        readonly int[] traits = new int[TraitCatalog.Count];
+        readonly bool[] linked = new bool[VehicleCatalog.Count];
 
-        /// <summary>Storage compartment slots unlocked, 1 to 3. The first is free.</summary>
+        /// <summary>Storage compartment slots unlocked, 1 to 4. The first is free; the fourth needs a second vehicle.</summary>
         public int StorageSlots { get; private set; } = 1;
 
         public Progress(bool persist)
         {
             this.persist = persist;
             unlocked[0] = true;
+            linked[0] = true;   // the Scout Jeep carries the traits for free
             if (!persist) return;
             Coins = PlayerPrefs.GetInt(CoinsKey, 0);
             for (int i = 1; i < unlocked.Length; i++) unlocked[i] = PlayerPrefs.GetInt(UnlockKey + i, 0) == 1;
@@ -43,6 +49,51 @@ namespace LastLight
             {
                 int item = PlayerPrefs.GetInt(SlotItemKey + i, Empty);
                 slotItems[i] = i < StorageSlots && StorageCatalog.IsItem(item) ? item : Empty;
+            }
+            for (int i = 0; i < traits.Length; i++) traits[i] = Mathf.Clamp(PlayerPrefs.GetInt(TraitKey + i, 0), 0, TraitCatalog.MaxLevel);
+            for (int i = 1; i < linked.Length; i++) linked[i] = PlayerPrefs.GetInt(LinkKey + i, 0) == 1;
+        }
+
+        // ---------- Traits ----------
+
+        /// <summary>The level bought for a trait, 0 to 2, whatever is being driven.</summary>
+        public int TraitLevel(Trait t) => traits[(int)t];
+
+        /// <summary>True once a vehicle carries the traits: the Scout Jeep always does, others after the transfer fee.</summary>
+        public bool TraitsLinked(int vehicle) => vehicle >= 0 && vehicle < linked.Length && linked[vehicle];
+
+        /// <summary>The level that applies in a run: the bought level if the driven vehicle carries the traits, else 0.</summary>
+        public int ActiveTraitLevel(Trait t) => TraitsLinked(Vehicle) ? traits[(int)t] : 0;
+
+        /// <summary>Buys the next level of a trait. Only while driving a vehicle that carries the traits.</summary>
+        public bool TryUpgradeTrait(Trait t)
+        {
+            int level = traits[(int)t];
+            if (level >= TraitCatalog.MaxLevel || !TraitsLinked(Vehicle)) return false;
+            if (!Spend(TraitCatalog.Cost(t, level + 1))) return false;
+            traits[(int)t] = level + 1;
+            Save();
+            return true;
+        }
+
+        /// <summary>Pays a vehicle's one-time fee to carry the traits, now and for every later upgrade.</summary>
+        public bool TryLinkTraits(int vehicle)
+        {
+            if (!IsUnlocked(vehicle)) return false;
+            if (TraitsLinked(vehicle)) return true;
+            if (!Spend(TraitCatalog.TransferFee(vehicle))) return false;
+            linked[vehicle] = true;
+            Save();
+            return true;
+        }
+
+        /// <summary>True once any vehicle past the Scout Jeep is owned, which opens the fourth compartment slot.</summary>
+        public bool FourthSlotAllowed
+        {
+            get
+            {
+                for (int i = 1; i < unlocked.Length; i++) if (unlocked[i]) return true;
+                return false;
             }
         }
 
@@ -65,6 +116,7 @@ namespace LastLight
         public bool TryUnlockSlot()
         {
             if (StorageSlots >= StorageCatalog.MaxSlots) return false;
+            if (StorageSlots == StorageCatalog.MaxSlots - 1 && !FourthSlotAllowed) return false;
             if (!Spend(StorageCatalog.SlotCost(StorageSlots))) return false;
             StorageSlots++;
             Save();
@@ -142,6 +194,8 @@ namespace LastLight
             for (int i = 0; i < colors.Length; i++) PlayerPrefs.SetInt(ColorKey + i, colors[i]);
             PlayerPrefs.SetInt(SlotsKey, StorageSlots);
             for (int i = 0; i < slotItems.Length; i++) PlayerPrefs.SetInt(SlotItemKey + i, slotItems[i]);
+            for (int i = 0; i < traits.Length; i++) PlayerPrefs.SetInt(TraitKey + i, traits[i]);
+            for (int i = 1; i < linked.Length; i++) PlayerPrefs.SetInt(LinkKey + i, linked[i] ? 1 : 0);
             PlayerPrefs.Save();
         }
     }

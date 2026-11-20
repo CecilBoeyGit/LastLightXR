@@ -2,26 +2,32 @@ using UnityEngine;
 
 namespace LastLight
 {
-    public enum WeatherKind { Clear, Fog, Storm }
+    public enum WeatherKind { Clear, Fog, Storm, Snow }
 
     /// <summary>
-    /// Weather encounters in the middle and late stages of a run. Each lasts a random 10 to 15 seconds.
+    /// Weather encounters from about half a kilometre in, each lasting a random 10 to 15 seconds, with long
+    /// gaps between them that shorten a little in the late stage. Never the same weather twice in a row.
     /// Fog: a thick bank rolls over the scouting region beyond the rim, so the scout light can't reveal
     /// anything; only a flashlight burns through it for a while.
-    /// Storm: rain and lightning, surfaces turn wet and glossy, and the jeep gets twitchy: steering moves
-    /// are amplified and it skids left and right at random.
-    /// Visuals and shader globals live here; GameDirector applies the gameplay effects.
+    /// Storm: rain and lightning, every surface wet and glossy with puddles on the road, and broken branches
+    /// blowing across it (GameDirector spawns those).
+    /// Snow: falling snow settles white on everything and the road ices over: the jeep gets slippery, steering
+    /// moves are amplified and it skids left and right at random (GameDirector applies the handling).
+    /// Visuals and shader globals live here.
     /// </summary>
     public sealed class WeatherSystem
     {
         public const float MinSeconds = 10f, MaxSeconds = 15f;
         const float RampSeconds = 1.5f;
-        const float FirstDelayMin = 6f, FirstDelayMax = 16f;       // after reaching the medium stage
-        const float MediumGapMin = 22f, MediumGapMax = 38f;
-        const float LateGapMin = 14f, LateGapMax = 26f;
+        /// <summary>Metres into a run before the first weather can roll in.</summary>
+        public const float FirstFrom = 520f;
+        const float FirstDelayMin = 4f, FirstDelayMax = 12f;       // seconds after passing FirstFrom
+        const float MediumGapMin = 38f, MediumGapMax = 58f;
+        const float LateGapMin = 28f, LateGapMax = 42f;
         const float WetUpRate = 1f / 3f, WetDryRate = 1f / 6f;
-        const int RainStreaks = 260;
-        const float RainHeight = 14f, RainSpeed = 26f;
+        const float SnowUpRate = 1f / 4f, SnowMeltRate = 1f / 10f;
+        const int RainStreaks = 260, SnowFlakes = 320;
+        const float RainHeight = 14f, RainSpeed = 26f, SnowSpeed = 3.4f;
         static readonly int WeatherId = Shader.PropertyToID("_LL_Weather");
         static readonly int TintId = Shader.PropertyToID("_Tint");
 
@@ -34,11 +40,17 @@ namespace LastLight
         public float Wetness { get; private set; }
         /// <summary>0 to 1 brightness of the current lightning flash.</summary>
         public float Flash { get; private set; }
+        /// <summary>How much snow has settled, 0 to 1. Builds in a snowfall and melts slowly afterwards.</summary>
+        public float SnowCover { get; private set; }
         public int Strikes { get; private set; }
         public bool Active => Kind != WeatherKind.Clear;
         public float FogAmount => Kind == WeatherKind.Fog ? Intensity : 0f;
         public float StormAmount => Kind == WeatherKind.Storm ? Intensity : 0f;
+        public float SnowAmount => Kind == WeatherKind.Snow ? Intensity : 0f;
         public bool RainVisible => rainA.gameObject.activeSelf;
+        public bool SnowVisible => snowA.gameObject.activeSelf;
+        /// <summary>Seconds until the next scheduled encounter, or -1 before it's drawn. For tests.</summary>
+        public float NextIn => nextIn;
         public bool FogVisible => fog.gameObject.activeSelf;
         /// <summary>True for an encounter started by Force (tests and debug keys) rather than the schedule.</summary>
         public bool Forced => forced;
@@ -49,7 +61,7 @@ namespace LastLight
         public System.Action OnThunder;
 
         readonly Transform root, fog, lightning;
-        readonly MeshRenderer fogRenderer, rainA, rainB, boltRenderer;
+        readonly MeshRenderer fogRenderer, rainA, rainB, snowA, snowB, boltRenderer;
         readonly Mesh boltMesh;
         readonly MeshBuilder mb = new MeshBuilder();
         readonly MaterialPropertyBlock mpb = new MaterialPropertyBlock();
@@ -58,6 +70,7 @@ namespace LastLight
         bool hadWeather;
         float strikeIn, thunderIn = -1f, flashTime;
         bool forced;
+        WeatherKind last = WeatherKind.Clear;
 
         public WeatherSystem(Transform parent, Material glowMat, int seed)
         {
@@ -107,6 +120,27 @@ namespace LastLight
             rainA.gameObject.SetActive(false);
             rainB.gameObject.SetActive(false);
 
+            // Snow: small soft flakes in two layers that drift down slowly and sway.
+            mb.Clear();
+            var sr = new System.Random(29);
+            for (int i = 0; i < SnowFlakes; i++)
+            {
+                float ang = (float)sr.NextDouble() * Mathf.PI * 2f;
+                float rad = Mathf.Sqrt((float)sr.NextDouble()) * (Diorama.Radius + 2f);
+                var p = new Vector3(Mathf.Cos(ang) * rad, (float)sr.NextDouble() * RainHeight, Mathf.Sin(ang) * rad);
+                // Keep the flakes ahead of the player: the head sits above the back of the disk, inside the volume.
+                if (p.z < -7f) p.z = -7f + (float)sr.NextDouble() * (Diorama.Radius + 9f);
+                float size = 0.045f + (float)sr.NextDouble() * 0.05f;
+                Color col = new Color(0.92f, 0.96f, 1f, 0.5f + (float)sr.NextDouble() * 0.35f);
+                mb.Quad(p + new Vector3(-size, -size, 0f), p + new Vector3(-size, size, 0f), p + new Vector3(size, size, 0f), p + new Vector3(size, -size, 0f), col);
+                mb.Quad(p + new Vector3(0f, -size, -size), p + new Vector3(0f, size, -size), p + new Vector3(0f, size, size), p + new Vector3(0f, -size, size), col);
+            }
+            Mesh snow = mb.ToMesh("LL_Snow");
+            snowA = MeshBuilder.Spawn("Snow A", root, snow, glowMat);
+            snowB = MeshBuilder.Spawn("Snow B", root, snow, glowMat);
+            snowA.gameObject.SetActive(false);
+            snowB.gameObject.SetActive(false);
+
             boltMesh = new Mesh { name = "LL_Lightning" };
             boltRenderer = MeshBuilder.Spawn("Lightning", root, boltMesh, glowMat);
             lightning = boltRenderer.transform;
@@ -122,6 +156,8 @@ namespace LastLight
             Intensity = 0f;
             TimeLeft = Duration = 0f;
             Wetness = 0f;
+            SnowCover = 0f;
+            last = WeatherKind.Clear;
             Flash = 0f;
             Strikes = 0;
             nextIn = -1f;
@@ -131,6 +167,8 @@ namespace LastLight
             fog.gameObject.SetActive(false);
             rainA.gameObject.SetActive(false);
             rainB.gameObject.SetActive(false);
+            snowA.gameObject.SetActive(false);
+            snowB.gameObject.SetActive(false);
             lightning.gameObject.SetActive(false);
             Push();
         }
@@ -147,22 +185,20 @@ namespace LastLight
         public void StrikeNow() { if (Kind == WeatherKind.Storm) Strike(); }
 
         /// <param name="running">The world only weathers while the run is going.</param>
+        /// <param name="distance">Metres into the run: nothing rolls in before <see cref="FirstFrom"/>.</param>
         /// <param name="flashlight">0 to 1 flashlight reveal: it burns the fog away while it lasts.</param>
-        public void Tick(float dt, bool running, GameStage stage, float time, float flashlight)
+        public void Tick(float dt, bool running, float distance, GameStage stage, float time, float flashlight)
         {
             if (running)
             {
-                if (Kind == WeatherKind.Clear && stage != GameStage.Early && !forced)
+                if (Kind == WeatherKind.Clear && distance >= FirstFrom && !forced)
                 {
-                    // The first encounter comes soon after the medium stage starts; later gaps shrink in the late stage.
+                    // The first encounter comes soon after FirstFrom; later gaps are long, a little shorter in the late stage.
                     if (nextIn < 0f)
                         nextIn = !hadWeather ? Range(FirstDelayMin, FirstDelayMax)
                             : stage == GameStage.Late ? Range(LateGapMin, LateGapMax) : Range(MediumGapMin, MediumGapMax);
                     nextIn -= dt;
-                    if (nextIn <= 0f)
-                    {
-                        Begin(rng.NextDouble() < 0.5 ? WeatherKind.Fog : WeatherKind.Storm, Range(MinSeconds, MaxSeconds));
-                    }
+                    if (nextIn <= 0f) Begin(PickKind(), Range(MinSeconds, MaxSeconds));
                 }
                 else if (Kind != WeatherKind.Clear)
                 {
@@ -171,6 +207,9 @@ namespace LastLight
                     Intensity = Mathf.Clamp01(Mathf.Min(age / RampSeconds, TimeLeft / RampSeconds));
                     if (TimeLeft <= 0f) End();
                 }
+
+                SnowCover = Kind == WeatherKind.Snow ? Mathf.MoveTowards(SnowCover, 1f, dt * SnowUpRate)
+                    : Mathf.MoveTowards(SnowCover, 0f, dt * SnowMeltRate);
 
                 // Storm effects: wetness, lightning and thunder.
                 if (Kind == WeatherKind.Storm)
@@ -217,13 +256,35 @@ namespace LastLight
                 rainA.SetPropertyBlock(mpb);
                 rainB.SetPropertyBlock(mpb);
             }
+            float snow = SnowAmount;
+            bool snowOn = snow > 0.01f;
+            if (snowA.gameObject.activeSelf != snowOn) { snowA.gameObject.SetActive(snowOn); snowB.gameObject.SetActive(snowOn); }
+            if (snowOn)
+            {
+                float fall = Mathf.Repeat(time * SnowSpeed, RainHeight);
+                float sway = Mathf.Sin(time * 0.8f) * 0.9f;
+                snowA.transform.localPosition = new Vector3(sway, -fall, 0f);
+                snowB.transform.localPosition = new Vector3(-sway * 0.7f, RainHeight - fall, 0.6f);
+                mpb.SetColor(TintId, new Color(1f, 1f, 1f, snow));
+                snowA.SetPropertyBlock(mpb);
+                snowB.SetPropertyBlock(mpb);
+            }
             Push();
+        }
+
+        /// <summary>Picks the next weather at random, never the same as the last one.</summary>
+        WeatherKind PickKind()
+        {
+            var options = new System.Collections.Generic.List<WeatherKind> { WeatherKind.Fog, WeatherKind.Storm, WeatherKind.Snow };
+            options.Remove(last);
+            return options[rng.Next(options.Count)];
         }
 
         void Begin(WeatherKind kind, float seconds)
         {
             if (Kind != WeatherKind.Clear) OnEnd?.Invoke(Kind);
             Kind = kind;
+            last = kind;
             Duration = TimeLeft = seconds;
             Intensity = 0f;
             strikeIn = Range(1.5f, 3f);
@@ -287,7 +348,7 @@ namespace LastLight
             mb.Quad(a - side, b - side, b + side, a + side, col);
         }
 
-        void Push() => Shader.SetGlobalVector(WeatherId, new Vector4(FogAmount, Wetness, Flash, 0f));
+        void Push() => Shader.SetGlobalVector(WeatherId, new Vector4(FogAmount, Wetness, Flash, SnowCover));
 
         float Range(float a, float b) => a + (float)rng.NextDouble() * (b - a);
     }

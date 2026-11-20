@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace LastLight
 {
-    public enum ChunkType { Quiet, Blocked1, Blocked2, Rockfall, Fork, Cliff }
+    public enum ChunkType { Quiet, Blocked1, Blocked2, Rockfall, Fork, Cliff, Lanes }
 
     /// <summary>How far into a run: early under 300 m, medium to 700 m, late after that.</summary>
     public enum GameStage { Early, Medium, Late }
@@ -22,6 +22,8 @@ namespace LastLight
         public bool rockfallTriggered;
         public Mesh terrainMesh;
         public readonly List<Mesh> propMeshes = new List<Mesh>();   // merged Tripo pines, rocks and grass
+        public Transform puddles;                                     // shown while the road is wet
+        public int lanesBlocked;                                      // barricades across a three-lane stretch
     }
 
     /// <summary>
@@ -41,12 +43,26 @@ namespace LastLight
     /// <summary>
     /// A broken cliff segment. The ground falls away into the abyss on both sides, leaving a thin strip
     /// of road. Each segment later in a run is narrower than the last.
+    /// Later in a run a cliff road can be twin: two narrow strips side by side over the abyss, one narrower than
+    /// the other, joined halfway along by a short ridge where the jeep can switch. The first twin is safe both
+    /// ways; after that one strip is a dead end that stops in a sheer drop, so the ridge is the way out.
     /// </summary>
     public class CliffRun
     {
         public const float RampLength = 8f;
+        public const float RidgeLength = 10f;
         public float startS, length, halfWidth;
         public float EndS => startS + length;
+
+        public bool twin;
+        public float laneOffset = 2.7f;     // each strip's centre sits this far either side of the centreline
+        public float leftHalf, rightHalf;   // half widths of the left and right strips
+        public int deadSide;                // -1 or +1 when that strip ends in a drop
+        public float ridgeS;                // centre of the connecting ridge
+        public float deadEndS;              // where the dead strip stops
+        public int SafeSide => deadSide != 0 ? -deadSide : (leftHalf >= rightHalf ? -1 : 1);
+        public float Half(int side) => side < 0 ? leftHalf : rightHalf;
+        public bool OnRidge(float s) => twin && Mathf.Abs(s - ridgeS) <= RidgeLength * 0.5f;
     }
 
     /// <summary>
@@ -76,6 +92,13 @@ namespace LastLight
         const float NarrowestCliffHalfWidth = 1.25f;
         const float FallTolerance = 0.25f;      // how far past the edge the jeep's centre can go before it drops
         const int FirstPowerupChunk = 10;
+        /// <summary>Cliff roads from here on are twin strips.</summary>
+        public const float TwinCliffsFrom = 600f;
+        /// <summary>Three-lane stretches with barricades start with the medium stage.</summary>
+        public const float LanesFrom = MediumStageFrom;
+        public const float LaneWidth = Diorama.RoadHalfWidth * 2f / 3f;
+        const float BarricadeHalfWidth = 1.32f;
+        static readonly int GuaranteedFlashlightChunk = Mathf.CeilToInt(450f / ChunkLength);
         public const float MediumStageFrom = 300f;
         public const float LateStageFrom = 700f;
         public static readonly int FirstShooterChunk = Mathf.CeilToInt(MediumStageFrom / ChunkLength);
@@ -101,6 +124,13 @@ namespace LastLight
         /// <summary>Distance of the guaranteed shield placed before the first shooters, or -1. For tests.</summary>
         public float GuaranteedShieldS { get; private set; } = -1f;
         public int TurretsSpawnedEarly { get; private set; }
+        /// <summary>Distance of the flashlight always placed before the weather can start, or -1. For tests.</summary>
+        public float GuaranteedFlashlightS { get; private set; } = -1f;
+        /// <summary>Barricade rows generated so far, counted by how many lanes they block (index 1 to 3). For tests.</summary>
+        public readonly int[] LaneRows = new int[4];
+        /// <summary>Twin cliff roads planned so far, and how many had a dead end. For tests.</summary>
+        public int TwinCliffs { get; private set; }
+        public int TwinDeadEnds { get; private set; }
 
         readonly Transform parent;
         readonly Material terrainMat, groundMat, pickupMat;
@@ -110,11 +140,15 @@ namespace LastLight
         int nextForkIndex;
         int forkUntilIndex;
         Fork currentFork;
-        int nextCliffIndex, cliffUntilIndex, cliffCount;
+        int nextCliffIndex, cliffUntilIndex, cliffCount, twinCount;
+        bool flashlightPlaced;
+        Material puddleMat;
         ChunkType lastType = ChunkType.Quiet;
         bool lastWasHazard;
 
-        static Mesh logMesh1, logMesh2, fallenPineMesh, boulderMesh, pebbleMesh, wallGapLeftMesh, wallGapRightMesh;
+        static Mesh logMesh1, logMesh2, fallenPineMesh, boulderMesh, pebbleMesh, wallGapLeftMesh, wallGapRightMesh, barricadeMesh;
+        static Mesh[] branchMeshes;
+        static readonly float[] intervals = new float[6];
 
         public System.Action<Hazard> OnRockfallWarning;
         public System.Action<Fork> OnForkPlanned;
@@ -211,18 +245,94 @@ namespace LastLight
             return Smooth(0f, CliffRun.RampLength, into) * Smooth(0f, CliffRun.RampLength, left);
         }
 
-        /// <summary>Half width of the road at s, ignoring splits.</summary>
+        /// <summary>Half width of the road at s, ignoring splits. A twin cliff road reports the full width it spans.</summary>
         public float RoadHalfAt(float s)
         {
             CliffRun r = CliffAt(s);
-            return r == null ? Diorama.RoadHalfWidth : Mathf.Lerp(Diorama.RoadHalfWidth, r.halfWidth, CliffBlend(r, s));
+            if (r == null || r.twin) return Diorama.RoadHalfWidth;
+            return Mathf.Lerp(Diorama.RoadHalfWidth, r.halfWidth, CliffBlend(r, s));
         }
 
         /// <summary>True when a jeep at road-relative X has gone over the edge of a cliff road.</summary>
         public bool OverAbyss(float xRel, float s)
         {
             CliffRun r = CliffAt(s);
-            return r != null && CliffBlend(r, s) >= 0.5f && Mathf.Abs(xRel) > RoadHalfAt(s) + FallTolerance;
+            if (r == null || CliffBlend(r, s) < 0.5f) return false;
+            float dist = r.twin ? TwinDistance(r, xRel, s) : Mathf.Abs(xRel) - RoadHalfAt(s);
+            return dist > FallTolerance;
+        }
+
+        /// <summary>The twin cliff road at s, if s is on one.</summary>
+        public CliffRun TwinAt(float s)
+        {
+            CliffRun r = CliffAt(s);
+            return r != null && r.twin ? r : null;
+        }
+
+        /// <summary>
+        /// The road surface of a twin cliff road at s as up to three intervals of road-relative X: the left strip,
+        /// the right strip and, along the ridge, the bridge between them. Where the road splits into the strips
+        /// (and where the safe one widens back out) the intervals blend from the full road. Past the dead end the
+        /// dead strip is gone. Returns how many intervals were written to <see cref="intervals"/> as (from, to) pairs;
+        /// lanes counts only the strips.
+        /// </summary>
+        static int TwinIntervals(CliffRun r, float s, out int lanes)
+        {
+            float b = CliffBlend(r, s), H = Diorama.RoadHalfWidth;
+            float l0 = -r.laneOffset - r.leftHalf, l1 = -r.laneOffset + r.leftHalf;
+            float r0 = r.laneOffset - r.rightHalf, r1 = r.laneOffset + r.rightHalf;
+            int n = 0;
+            if (r.deadSide != 0 && s >= r.deadEndS)
+            {
+                // Only the safe strip carries on, widening back into the full road at the end.
+                float a = r.deadSide < 0 ? r0 : l0, c = r.deadSide < 0 ? r1 : l1;
+                intervals[n++] = Mathf.Lerp(-H, a, b); intervals[n++] = Mathf.Lerp(H, c, b);
+                lanes = 1;
+                return 1;
+            }
+            float la = Mathf.Lerp(-H, l0, b), lb = Mathf.Lerp(0f, l1, b);
+            float ra = Mathf.Lerp(0f, r0, b), rb = Mathf.Lerp(H, r1, b);
+            intervals[n++] = la; intervals[n++] = lb;
+            intervals[n++] = ra; intervals[n++] = rb;
+            lanes = 2;
+            if (r.OnRidge(s)) { intervals[n++] = lb; intervals[n++] = ra; return 3; }
+            return 2;
+        }
+
+        /// <summary>Signed distance from a road-relative X to the nearest road surface on a twin cliff road.</summary>
+        static float TwinDistance(CliffRun r, float xRel, float s)
+        {
+            int n = TwinIntervals(r, s, out _);
+            float best = float.MaxValue;
+            for (int i = 0; i < n; i++) best = Mathf.Min(best, Mathf.Max(intervals[i * 2] - xRel, xRel - intervals[i * 2 + 1]));
+            return best;
+        }
+
+        /// <summary>Centre and half width of one strip of a twin cliff road at s (side -1 left, +1 right), or false if it's gone.</summary>
+        public bool TwinLane(float s, int side, out float center, out float half)
+        {
+            center = half = 0f;
+            CliffRun r = TwinAt(s);
+            if (r == null) return false;
+            int n = TwinIntervals(r, s, out int lanes);
+            if (lanes == 1)
+            {
+                if (side == r.deadSide) return false;
+                center = (intervals[0] + intervals[1]) * 0.5f; half = (intervals[1] - intervals[0]) * 0.5f;
+                return true;
+            }
+            int i = side < 0 ? 0 : 1;
+            center = (intervals[i * 2] + intervals[i * 2 + 1]) * 0.5f;
+            half = (intervals[i * 2 + 1] - intervals[i * 2]) * 0.5f;
+            return true;
+        }
+
+        /// <summary>A road-relative X that is safely on the road at s: the safe strip of a twin cliff road, else the centre.</summary>
+        public float SafeRoadX(float s)
+        {
+            CliffRun r = TwinAt(s);
+            if (r == null) return 0f;
+            return TwinLane(s, r.SafeSide, out float c, out _) ? c : 0f;
         }
 
         /// <summary>True along the thin, dangerous stretch of a cliff segment.</summary>
@@ -248,7 +358,11 @@ namespace LastLight
         /// <summary>Signed distance from a road-relative X to the road surface. Negative means on the road.</summary>
         public float RoadDistance(float xRel, float s)
         {
-            if (cliffs.Count > 0 && CliffAt(s) != null) return Mathf.Abs(xRel) - RoadHalfAt(s);
+            if (cliffs.Count > 0)
+            {
+                CliffRun cr = CliffAt(s);
+                if (cr != null) return cr.twin ? TwinDistance(cr, xRel, s) : Mathf.Abs(xRel) - RoadHalfAt(s);
+            }
             Fork f = ForkAt(s);
             if (f == null) return Mathf.Abs(xRel) - Diorama.RoadHalfWidth;
             Branch(f, s, out float b, out float w);
@@ -272,6 +386,15 @@ namespace LastLight
         {
             const float BodyMargin = 0.9f;
             frac = Mathf.Clamp(frac, -1f, 1f);
+            CliffRun twin = TwinAt(s);
+            if (twin != null)
+            {
+                // Each half of the crowd takes a strip; past a dead end they all squeeze onto the safe one.
+                int lane = frac < 0f ? -1 : 1;
+                float spot = Mathf.Abs(frac) * 2f - 1f;
+                if (!TwinLane(s, lane, out float lc, out float lh)) { TwinLane(s, -lane, out lc, out lh); spot = frac; }
+                return lc + spot * Mathf.Max(lh - BodyMargin, 0.1f);
+            }
             float open = frac * Mathf.Max(RoadHalfAt(s) - BodyMargin, 0.25f);
             Fork f = ForkAt(s);
             if (f == null) return open;
@@ -398,6 +521,8 @@ namespace LastLight
             nextCliffIndex = FirstCliffChunk + rng.Next(4);
             cliffUntilIndex = -1;
             cliffCount = 0;
+            twinCount = 0;
+            flashlightPlaced = false;
         }
 
         public void Reset()
@@ -415,6 +540,9 @@ namespace LastLight
             ShooterSpawnS.Clear();
             GuaranteedShieldS = -1f;
             TurretsSpawnedEarly = 0;
+            GuaranteedFlashlightS = -1f;
+            System.Array.Clear(LaneRows, 0, LaneRows.Length);
+            TwinCliffs = TwinDeadEnds = 0;
             nextIndex = 0;
             lastType = ChunkType.Quiet;
             lastWasHazard = false;
@@ -480,6 +608,8 @@ namespace LastLight
             var mb = new MeshBuilder();
             BuildTerrain(mb, c);
             BuildEdgePosts(mb, c);
+            if (c.type == ChunkType.Cliff) BuildTwinMarks(mb, c);
+            if (c.type == ChunkType.Lanes) BuildLaneLines(mb, c);
             var props = SceneryModels.Active;
             var pines = props != null && props.HasPine ? new PropBatch(props.pineMesh) : null;
             var rocks = props != null && props.HasRock ? new PropBatch(props.rockMesh) : null;
@@ -492,7 +622,9 @@ namespace LastLight
             SpawnProps(c, rocks, props != null ? props.rockMaterial : null, "Rocks");
             SpawnProps(c, grass, props != null ? props.grassMaterial : null, "Grass");
 
+            BuildPuddles(c);
             if (c.type == ChunkType.Blocked1 || c.type == ChunkType.Blocked2) PlaceBlocker(c, rng);
+            if (c.type == ChunkType.Lanes) PlaceBarricades(c, rng);
             if (c.type == ChunkType.Fork) PlaceForkContents(c, rng);
             PlacePickups(c, rng);
             PlaceShooters(c, rng);
@@ -534,6 +666,10 @@ namespace LastLight
             if (index < 3) return ChunkType.Quiet;
             float breather = Mathf.Lerp(0.75f, 0.35f, Mathf.Clamp01(difficultyStep / 8f));
             if (lastWasHazard && rng.NextDouble() < breather) return ChunkType.Quiet;
+            // Three-lane stretches with barricades from the medium stage, a little more often late on.
+            float startS = index * ChunkLength;
+            if (startS >= LanesFrom && lastType != ChunkType.Lanes && rng.NextDouble() < (StageAt(startS) == GameStage.Late ? 0.3 : 0.22))
+                return ChunkType.Lanes;
             double r = rng.NextDouble();
             bool allowWide = index > 8;
             if (r < 0.25) return ChunkType.Quiet;
@@ -566,6 +702,24 @@ namespace LastLight
                 length = chunksLong * ChunkLength,
                 halfWidth = Mathf.Max(NarrowestCliffHalfWidth, FirstCliffHalfWidth - cliffCount * CliffNarrowingStep)
             };
+            // From the middle-late stage, cliff roads split into two strips: the first is safe both ways, later ones
+            // usually have one strip that ends in a drop.
+            if (r.startS >= TwinCliffsFrom && (twinCount == 0 || rng.NextDouble() < 0.75))
+            {
+                chunksLong = 4 + rng.Next(2);
+                r.length = chunksLong * ChunkLength;
+                r.twin = true;
+                int narrow = rng.NextDouble() < 0.5 ? -1 : 1;
+                r.leftHalf = narrow < 0 ? 1.05f : 1.55f;
+                r.rightHalf = narrow < 0 ? 1.55f : 1.05f;
+                r.halfWidth = Diorama.RoadHalfWidth;
+                r.ridgeS = r.startS + r.length * 0.45f;
+                r.deadEndS = r.startS + r.length * 0.7f;
+                if (twinCount > 0) r.deadSide = rng.NextDouble() < 0.5 ? -1 : 1;
+                twinCount++;
+                TwinCliffs++;
+                if (r.deadSide != 0) TwinDeadEnds++;
+            }
             cliffs.Add(r);
             cliffCount++;
             OnCliffPlanned?.Invoke(r);
@@ -632,6 +786,13 @@ namespace LastLight
                 Fork f = ForkAt(s);
                 if (f == null)
                 {
+                    CliffRun twin = TwinAt(s);
+                    if (twin != null)
+                    {
+                        int n = TwinIntervals(twin, s, out int lanes);
+                        for (int i = 0; i < lanes; i++) { AddPost(mb, cx + intervals[i * 2], z); AddPost(mb, cx + intervals[i * 2 + 1], z); }
+                        continue;
+                    }
                     float half = RoadHalfAt(s);
                     AddPost(mb, cx - half, z);
                     AddPost(mb, cx + half, z);
@@ -658,6 +819,61 @@ namespace LastLight
         static void AddPost(MeshBuilder mb, float x, float z)
         {
             mb.Box(new Vector3(x, 0.28f, z), new Vector3(0.14f, 0.56f, 0.14f), Palette.LaneMark);
+        }
+
+        /// <summary>
+        /// Twin cliff markings in a chunk: glowing-white chevron boards along the ridge pointing at the safe strip, and
+        /// at a dead strip's end tall red posts with a striped board, so the drop reads from the scouting preview.
+        /// </summary>
+        void BuildTwinMarks(MeshBuilder mb, Chunk c)
+        {
+            foreach (var r in cliffs)
+            {
+                if (!r.twin) continue;
+                float chunkEnd = c.startS + ChunkLength;
+                if (r.deadSide != 0 && r.deadEndS >= c.startS && r.deadEndS < chunkEnd)
+                {
+                    float s = r.deadEndS - 0.4f;
+                    float z = s - c.startS;
+                    if (TwinLane(s, r.deadSide, out float lc, out float lh))
+                    {
+                        float x = Center(s) + lc;
+                        mb.Box(new Vector3(x - lh, 1.0f, z), new Vector3(0.22f, 2f, 0.22f), Palette.WarningBoard * 1.4f);
+                        mb.Box(new Vector3(x + lh, 1.0f, z), new Vector3(0.22f, 2f, 0.22f), Palette.WarningBoard * 1.4f);
+                        mb.Box(new Vector3(x, 1.65f, z), new Vector3(lh * 2f + 0.3f, 0.36f, 0.1f), Palette.WarningBoard);
+                        for (float bx = -lh + 0.2f; bx < lh; bx += 0.6f)
+                            mb.Box(new Vector3(x + bx, 1.65f, z - 0.06f), new Vector3(0.26f, 0.36f, 0.03f), Palette.Barricade);
+                    }
+                }
+                if (r.deadSide != 0 && Mathf.Abs(r.ridgeS - (c.startS + ChunkLength * 0.5f)) < ChunkLength * 0.5f + CliffRun.RidgeLength)
+                {
+                    // Chevrons on the dead strip's outer edge just before the ridge, pointing across to the safe strip.
+                    for (float s = r.ridgeS - CliffRun.RidgeLength * 1.6f; s < r.ridgeS; s += 2f)
+                    {
+                        if (s < c.startS || s >= chunkEnd) continue;
+                        if (!TwinLane(s, r.deadSide, out float lc, out float lh)) continue;
+                        float z = s - c.startS;
+                        float x = Center(s) + lc + r.deadSide * (lh + 0.25f);
+                        float dir = -r.deadSide;
+                        Vector3 p = new Vector3(x, 0.7f, z);
+                        mb.Box(p + new Vector3(dir * 0.1f, 0.15f, 0f), new Vector3(0.12f, 0.42f, 0.08f), Quaternion.Euler(0f, 0f, dir * 40f), Palette.EscapeMarker);
+                        mb.Box(p + new Vector3(dir * 0.1f, -0.15f, 0f), new Vector3(0.12f, 0.42f, 0.08f), Quaternion.Euler(0f, 0f, -dir * 40f), Palette.EscapeMarker);
+                    }
+                }
+            }
+        }
+
+        /// <summary>Dashed lane lines splitting the road into three lanes, for a barricade chunk.</summary>
+        void BuildLaneLines(MeshBuilder mb, Chunk c)
+        {
+            for (float z = 0.3f; z < ChunkLength - 0.4f; z += 2f)
+            {
+                float s = c.startS + z + 0.6f;
+                float cx = Center(s);
+                float yaw = Mathf.Atan(Slope(s)) * Mathf.Rad2Deg;
+                for (int i = -1; i <= 1; i += 2)
+                    mb.Box(new Vector3(cx + i * LaneWidth * 0.5f, 0.03f, z + 0.6f), new Vector3(0.14f, 0.04f, 1.2f), Quaternion.Euler(0f, yaw, 0f), Palette.LaneMark * 1.2f);
+            }
         }
 
         static void SpawnProps(Chunk c, PropBatch batch, Material mat, string name)
@@ -828,7 +1044,7 @@ namespace LastLight
             if (c.type != ChunkType.Cliff && c.index >= FirstPowerupChunk)
             {
                 bool first = c.index == FirstPowerupChunk;
-                double chance = Mathf.Lerp(0.04f, 0.16f, Mathf.Clamp01((c.index - FirstPowerupChunk) / 50f));
+                double chance = Mathf.Lerp(0.06f, 0.2f, Mathf.Clamp01((c.index - FirstPowerupChunk) / 50f));
                 if (first || rng.NextDouble() < chance)
                 {
                     double r = rng.NextDouble();
@@ -842,27 +1058,35 @@ namespace LastLight
                 SpawnPowerup(c, PickupKind.Shield, rng);
                 GuaranteedShieldS = c.startS;
             }
+            // And a flashlight waits a little before the weather can start, since it's the answer to fog.
+            if (!flashlightPlaced && c.index >= GuaranteedFlashlightChunk && c.type != ChunkType.Cliff)
+            {
+                flashlightPlaced = true;
+                SpawnPowerup(c, PickupKind.Flashlight, rng);
+                GuaranteedFlashlightS = c.startS;
+            }
         }
 
         static readonly int GuaranteedShieldChunk = FirstShooterChunk - 4;
 
         /// <summary>
-        /// Which powerup a roll gives. The shovel is a medium-rarity find from the start through the medium
-        /// stage, less common late on. The shield is rare all run. The turret only appears from the medium
-        /// stage, when shooter zombies do.
+        /// Which powerup a roll gives. Flashlights and repairs are common and equally likely all run. The shovel
+        /// is a medium-rarity find, less common late on. The shield is rare all run. The turret only appears from
+        /// the medium stage, when shooter zombies do.
         /// </summary>
         public static PickupKind PowerupKind(double r, GameStage stage)
         {
             switch (stage)
             {
-                case GameStage.Early:   // booster 34%, shovel 30%, flashlight 28%, shield 8%
-                    return r < 0.34 ? PickupKind.Booster : r < 0.64 ? PickupKind.Shovel : r < 0.92 ? PickupKind.Flashlight : PickupKind.Shield;
-                case GameStage.Medium:  // booster 28%, shovel 28%, flashlight 20%, turret 16%, shield 8%
-                    return r < 0.28 ? PickupKind.Booster : r < 0.56 ? PickupKind.Shovel : r < 0.76 ? PickupKind.Flashlight
-                         : r < 0.92 ? PickupKind.Turret : PickupKind.Shield;
-                default:                // booster 30%, shovel 16%, flashlight 24%, turret 22%, shield 8%
-                    return r < 0.30 ? PickupKind.Booster : r < 0.46 ? PickupKind.Shovel : r < 0.70 ? PickupKind.Flashlight
-                         : r < 0.92 ? PickupKind.Turret : PickupKind.Shield;
+                case GameStage.Early:   // booster 26%, shovel 22%, flashlight 22%, repair 22%, shield 8%
+                    return r < 0.26 ? PickupKind.Booster : r < 0.48 ? PickupKind.Shovel : r < 0.70 ? PickupKind.Flashlight
+                         : r < 0.92 ? PickupKind.Repair : PickupKind.Shield;
+                case GameStage.Medium:  // booster 18%, shovel 18%, flashlight 21%, repair 21%, turret 14%, shield 8%
+                    return r < 0.18 ? PickupKind.Booster : r < 0.36 ? PickupKind.Shovel : r < 0.57 ? PickupKind.Flashlight
+                         : r < 0.78 ? PickupKind.Repair : r < 0.92 ? PickupKind.Turret : PickupKind.Shield;
+                default:                // booster 18%, shovel 12%, flashlight 22%, repair 22%, turret 18%, shield 8%
+                    return r < 0.18 ? PickupKind.Booster : r < 0.30 ? PickupKind.Shovel : r < 0.52 ? PickupKind.Flashlight
+                         : r < 0.74 ? PickupKind.Repair : r < 0.92 ? PickupKind.Turret : PickupKind.Shield;
             }
         }
 
@@ -965,6 +1189,105 @@ namespace LastLight
             return (rng.NextDouble() < 0.5 ? -1f : 1f) * (Diorama.RoadHalfWidth + 5f);
         }
 
+        /// <summary>
+        /// A row of barricades across a three-lane stretch. In the medium stage one lane is blocked (sometimes two);
+        /// late on two is the usual, with a small chance all three are, so something has to be smashed.
+        /// </summary>
+        void PlaceBarricades(Chunk c, System.Random rng)
+        {
+            double r = rng.NextDouble();
+            float t = Mathf.Clamp01((c.startS - LateStageFrom) / 800f);
+            int count = StageAt(c.startS) == GameStage.Late
+                ? (r < Mathf.Lerp(0.42f, 0.25f, t) ? 1 : r < Mathf.Lerp(0.96f, 0.9f, t) ? 2 : 3)
+                : (r < 0.7 ? 1 : 2);
+            var lanes = new List<int> { -1, 0, 1 };
+            for (int i = 0; i < lanes.Count; i++) { int j = rng.Next(i, lanes.Count); (lanes[i], lanes[j]) = (lanes[j], lanes[i]); }
+            float z = ChunkLength * 0.62f;
+            float s = c.startS + z;
+            float yaw = Mathf.Atan(Slope(s)) * Mathf.Rad2Deg;
+            for (int i = 0; i < count; i++)
+            {
+                var h = SpawnHazard(c, HazardKind.Barricade, barricadeMesh);
+                h.halfWidth = BarricadeHalfWidth;
+                h.transform.localPosition = new Vector3(Center(s) + lanes[i] * LaneWidth, 0f, z);
+                h.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
+            }
+            c.lanesBlocked = count;
+            LaneRows[count]++;
+        }
+
+        /// <summary>Dark puddles on the road, hidden until the road is wet.</summary>
+        void BuildPuddles(Chunk c)
+        {
+            var rng = new System.Random(MixSeed(seed + 31337, c.index));
+            var water = new MeshBuilder();
+            int count = 3 + rng.Next(4);
+            for (int i = 0; i < count; i++)
+            {
+                float z = 0.6f + (float)rng.NextDouble() * (ChunkLength - 1.2f);
+                float s = c.startS + z;
+                float xRel = ((float)rng.NextDouble() * 2f - 1f) * (RoadHalfAt(s) - 1f);
+                if (RoadDistance(xRel, s) > -0.7f) continue;
+                float rx = 0.5f + (float)rng.NextDouble() * 0.7f, rz = rx * (0.6f + (float)rng.NextDouble() * 0.6f);
+                var center = new Vector3(Center(s) + xRel, 0.025f, z);
+                int n = 12;
+                for (int k = 0; k < n; k++)
+                {
+                    float a0 = k * Mathf.PI * 2f / n, a1 = (k + 1) * Mathf.PI * 2f / n;
+                    float w0 = 0.85f + 0.3f * Mathf.PerlinNoise(i * 3.1f + k * 0.7f, 2.3f), w1 = 0.85f + 0.3f * Mathf.PerlinNoise(i * 3.1f + (k + 1) % n * 0.7f, 2.3f);
+                    Vector3 p0 = center + new Vector3(Mathf.Cos(a0) * rx * w0, 0f, Mathf.Sin(a0) * rz * w0);
+                    Vector3 p1 = center + new Vector3(Mathf.Cos(a1) * rx * w1, 0f, Mathf.Sin(a1) * rz * w1);
+                    water.TriOut(center, p1, p0, new Color(0.09f, 0.12f, 0.17f, 1f), center + Vector3.down);
+                }
+            }
+            if (water.VertexCount == 0) return;
+            c.puddles = new GameObject("Puddles").transform;
+            c.puddles.SetParent(c.root, false);
+            var wm = water.ToMesh($"LL_Puddles_{c.index}");
+            c.propMeshes.Add(wm);
+            if (puddleMat == null)
+            {
+                puddleMat = new Material(terrainMat) { name = "LL_Puddle" };
+                puddleMat.SetFloat("_SnowCover", 0f);
+            }
+            // The wet-surface glints in the ground shader make the dark water shine; no glow layer, which wouldn't
+            // be clipped to the disk.
+            MeshBuilder.Spawn("Water", c.puddles, wm, puddleMat);
+            c.puddles.gameObject.SetActive(false);
+        }
+
+        public bool PuddlesShown { get; private set; }
+
+        /// <summary>Shows the puddles once the road is wet enough.</summary>
+        public void SetWetness(float wet)
+        {
+            bool show = wet > 0.3f;
+            PuddlesShown = show;
+            foreach (var c in chunks)
+                if (c.puddles != null && c.puddles.gameObject.activeSelf != show) c.puddles.gameObject.SetActive(show);
+        }
+
+        /// <summary>
+        /// A broken branch blowing across the road in a storm, starting off one edge at travel distance s and
+        /// tumbling to the other at <paramref name="speed"/>. It hits like a fallen tree. Returns null where there's
+        /// no generated chunk or the road is a cliff.
+        /// </summary>
+        public Hazard SpawnBlownBranch(float s, int dir, float halfWidth, float speed, System.Random rng)
+        {
+            Chunk c = ChunkAt(s);
+            if (c == null || c.type == ChunkType.Cliff || CliffAt(s) != null) return null;
+            float z = s - c.startS;
+            float edge = RoadHalfAt(s);
+            var h = SpawnHazard(c, HazardKind.FallenTree, branchMeshes[rng.Next(branchMeshes.Length)]);
+            h.halfWidth = halfWidth;
+            h.transform.localScale = Vector3.one * (halfWidth / 1.3f);
+            h.transform.localPosition = new Vector3(Center(s) - dir * (edge + 2.2f), 0f, z);
+            h.driftX = dir * speed;
+            h.driftEndX = Center(s) + dir * (edge + 3f);
+            h.tumble = (float)(rng.NextDouble() - 0.5) * 30f;
+            return h;
+        }
+
         void TriggerRockfall(Chunk c, float distance, float carTargetX, float rockfallLead)
         {
             c.rockfallTriggered = true;
@@ -1028,6 +1351,38 @@ namespace LastLight
 
             wallGapRightMesh = BuildWallMesh(mb, 1, "LL_DeadEndWall_GapRight"); mb.Clear();
             wallGapLeftMesh = BuildWallMesh(mb, -1, "LL_DeadEndWall_GapLeft"); mb.Clear();
+
+            // Barricade: a red and white striped board on two legs with a concrete foot and an amber lamp each end.
+            float bw = BarricadeHalfWidth * 2f;
+            mb.Box(new Vector3(0f, 0.18f, 0f), new Vector3(bw, 0.36f, 0.55f), Palette.Stone * 1.6f);
+            mb.Box(new Vector3(-bw * 0.4f, 0.65f, 0f), new Vector3(0.12f, 0.7f, 0.12f), Palette.Metal * 1.3f);
+            mb.Box(new Vector3(bw * 0.4f, 0.65f, 0f), new Vector3(0.12f, 0.7f, 0.12f), Palette.Metal * 1.3f);
+            mb.Box(new Vector3(0f, 0.95f, -0.08f), new Vector3(bw, 0.42f, 0.1f), Palette.WarningBoard);
+            for (float x = -bw * 0.5f + 0.25f; x < bw * 0.5f; x += 0.7f)
+                mb.Box(new Vector3(x, 0.95f, -0.14f), new Vector3(0.3f, 0.42f, 0.03f), Quaternion.Euler(0f, 0f, 30f), Palette.Barricade);
+            mb.Box(new Vector3(-bw * 0.5f + 0.1f, 1.26f, -0.08f), new Vector3(0.18f, 0.18f, 0.18f), Palette.UIAmber * 3f);
+            mb.Box(new Vector3(bw * 0.5f - 0.1f, 1.26f, -0.08f), new Vector3(0.18f, 0.18f, 0.18f), Palette.UIAmber * 3f);
+            barricadeMesh = mb.ToMesh("LL_Barricade"); mb.Clear();
+
+            // Broken branches for storms: a snapped bough with twigs and a few clumps of needles, 2.6 long at scale 1.
+            branchMeshes = new Mesh[3];
+            for (int k = 0; k < branchMeshes.Length; k++)
+            {
+                var rng = new System.Random(500 + k);
+                mb.Box(new Vector3(0f, 0.22f, 0f), new Vector3(2.6f, 0.26f, 0.26f), Quaternion.Euler(0f, 0f, (float)(rng.NextDouble() - 0.5) * 8f), Palette.Trunk * 1.15f);
+                mb.Box(new Vector3(-1.32f, 0.22f, 0f), new Vector3(0.12f, 0.34f, 0.34f), Palette.Trunk * 1.8f);   // pale snapped end
+                int twigs = 3 + k;
+                for (int i = 0; i < twigs; i++)
+                {
+                    float x = -0.9f + i * (1.9f / twigs) + (float)rng.NextDouble() * 0.2f;
+                    float side = i % 2 == 0 ? 1f : -1f;
+                    float len = 0.5f + (float)rng.NextDouble() * 0.5f;
+                    var at = new Vector3(x + 0.18f, 0.24f, side * len * 0.4f);
+                    mb.Box(at, new Vector3(0.08f, 0.08f, len), Quaternion.Euler(0f, side * 35f, 0f), Palette.Trunk);
+                    mb.Cone(at + new Vector3(0.15f, -0.05f, side * len * 0.4f), 0.32f, 0.45f, 5, rng.NextDouble() < 0.5 ? Palette.Pine : Palette.PineDark, (float)rng.NextDouble());
+                }
+                branchMeshes[k] = mb.ToMesh("LL_Branch_" + k); mb.Clear();
+            }
         }
 
         /// <summary>

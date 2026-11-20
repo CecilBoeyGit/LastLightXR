@@ -55,6 +55,8 @@ namespace LastLight
         public System.Action OnGrab;
         public System.Action OnRelease;
         public System.Action OnGazeArmed;
+        /// <summary>Set while something else near the jeep (the repair wrench) owns the gaze, so a stare there can't arm the beacon.</summary>
+        public bool GazeArmSuppressed;
         public System.Action<Hazard, float> OnSweep;
 
         readonly Diorama diorama;
@@ -116,7 +118,7 @@ namespace LastLight
         {
             time += dt;
             BeaconHovered = false;
-            UpdateGazeArm(dt, gazeLocal, running && !car.falling && dragHand < 0);
+            UpdateGazeArm(dt, gazeLocal, running && !car.falling && dragHand < 0 && !GazeArmSuppressed);
             Vector3 beaconWorld = diorama.ToWorld(beacon.transform.localPosition);
 
             for (int i = 0; i < 2; i++)

@@ -4,6 +4,46 @@ Builds are release APKs for PICO Swan (Android, ARM64), package `com.lastlight.p
 Version history before git: 0.1.1 to 0.1.5 were built and installed but not committed, so the first
 commit holds the 0.1.6 source.
 
+## 0.1.12
+
+- Gaze timings: powerups still take 1.5 s of staring and stored items 1 s, but both now hold through a fifth of a
+  second of eye jitter or a blink, and the target you're on keeps a wider margin, so the count stops restarting.
+- Dashboard: the speedometer and the horde dial are gone. Health is now the big dial in the middle: a ring split
+  into three segments that fill and drain radially, green at full, amber at two, pulsing red on the last bar. A
+  smaller digital weather dial sits on its left, with an icon for the current weather (moon when clear, fog bars,
+  storm cloud with lightning, snowflake), a ring that runs down with the time left, and the seconds. The storage
+  compartment is built into the dash on the right as a 2 x 2 grid. Distance and the coin bank moved to the ends of
+  the lamp strip; a HORDE CLOSE! alert replaces the horde dial's warning.
+- Weather: starts later, from 520 m, with longer gaps between encounters (38-58 s, 28-42 s late on), and never the
+  same weather twice in a row.
+- Storm: every surface wet with puddles on the road. The jeep no longer slips; instead broken branches of three
+  sizes blow across the road from either side and hit like fallen trees. They come every 3.2 s or so at first,
+  down to every 1.3 s by about 1.7 km.
+- Snow and ice, a third weather: falling snow settles white on everything, the road ices over and the jeep leaves
+  tyre tracks. The slipperiness moved here: amplified steering, a slower-answering jeep and random skids.
+- Flashlights are much more common (about 22% of powerups in every stage, up from 20-28% of a rarer roll), powerups
+  overall are a little more common, and one flashlight always waits before the weather can start.
+- Repairs powerup (green gear): gives back one health bar. As common as the flashlight. Also sold in the garage.
+- Repair QTE: on the last health bar a wrench floats over the jeep. Look at it for half a second, then look at
+  three dots that appear one at a time round the jeep, half a second each, to get a bar back.
+- Garage shop: prices tripled (shovel 180, speed boost 120, turret 270, flashlight 150); repairs cost the most at 420.
+- Storage: a fourth slot (900 coins), for sale once you own any vehicle past the Scout Jeep.
+- Rhino APC starts every run (and respawn) with a shovel fitted, outside the compartment.
+- New vehicle, Angel Transponder (2,500 coins, the most expensive): an emergency medical van whose first respawn in
+  each run is free.
+- Three-lane stretches from 300 m: dashed lane lines and a row of barricades. In the medium stage one lane is shut
+  (sometimes two); late on two is usual, with a small chance all three are. Barricades hit like trees.
+- Twin cliff roads from 600 m: two narrow strips over the abyss, one narrower than the other, joined halfway by a
+  ridge where you can switch. The first is safe both ways; later ones usually have a strip that ends in a sheer
+  drop (red posts and a striped board mark it, green chevrons point across at the ridge).
+- Spitters: stare at one you can see for a second and the jeep hurls a rock that knocks it down.
+- Traits panel in the garage (above the garage): Visibility (+15% / +30% gaze radius), Controls (15% / 50%
+  steadier on snow) and Evasion (15% / 40% chance a crash without a shield or shovel costs no health). The second
+  Controls and Evasion levels cost far more. Traits apply to the Scout Jeep for free; any other vehicle pays a
+  one-time transfer fee (150 / 300 / 500), after which later upgrades carry over automatically.
+- Editor keys: O snow, 4 uses the fourth stored item, X takes a hit of damage.
+- Headless preview: checks and renders for all of the above.
+
 ## 0.1.11
 
 - Dashboard: the rim gauges are replaced by a car-style instrument cluster floating upright beyond the far rim,

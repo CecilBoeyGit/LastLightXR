@@ -13,11 +13,15 @@ namespace LastLight
         public Color[] colors;
         public float roofY;         // where the turret mounts
         public float frontZ;        // front bumper, where the shovel mounts
+        /// <summary>One-line perk shown in the garage, or empty.</summary>
+        public string perk = "";
         public System.Action<MeshBuilder, Color> build;
     }
 
     /// <summary>
-    /// The vehicles the garage offers. All are placeholder box models for now, built facing +Z within the
+    /// The vehicles the garage offers. Owning any vehicle past the Scout Jeep lets the storage panel sell a fourth
+    /// compartment slot; the Rhino starts every run with a shovel fitted, and the Angel Transponder gets one free
+    /// respawn per run. All are placeholder box models for now, built facing +Z within the
     /// jeep's 1.4 x 2.6 footprint. Swap the build functions for real models later.
     /// </summary>
     public static class VehicleCatalog
@@ -39,6 +43,7 @@ namespace LastLight
             {
                 name = "HAULER PICKUP",
                 blurb = "Long bed, big grille.",
+                perk = "PERK: 4TH STORAGE SLOT",
                 cost = 400,
                 colorNames = new[] { "Steel Blue", "Forest", "Charcoal", "Sunset" },
                 colors = new[] { Hex("#3f6f9a"), Hex("#2f5a3a"), Hex("#3a3c40"), Hex("#e0702e") },
@@ -50,14 +55,29 @@ namespace LastLight
             {
                 name = "RHINO APC",
                 blurb = "Armoured plates, slit windows.",
+                perk = "PERK: SHOVEL FITTED EVERY RUN, 4TH SLOT",
                 cost = 1000,
                 colorNames = new[] { "Gunmetal", "Desert", "Night", "Hazard" },
                 colors = new[] { Hex("#5a6068"), Hex("#b89a62"), Hex("#22252a"), Hex("#e8c02e") },
                 roofY = 1.55f,
                 frontZ = 1.36f,
                 build = BuildApc
+            },
+            new VehicleDef
+            {
+                name = "ANGEL TRANSPONDER",
+                blurb = "Emergency medical van.",
+                perk = "PERK: 1 FREE RESPAWN PER RUN, 4TH SLOT",
+                cost = 2500,
+                colorNames = new[] { "Rescue White", "Signal Red", "Hi-Vis Lime", "Night Navy" },
+                colors = new[] { Hex("#e9e6df"), Hex("#c8372d"), Hex("#c9e23a"), Hex("#25324a") },
+                roofY = 1.72f,
+                frontZ = 1.34f,
+                build = BuildAmbulance
             }
         };
+
+        public const int Hauler = 1, Rhino = 2, Angel = 3;
 
         public static int Count => All.Length;
 
@@ -151,5 +171,35 @@ namespace LastLight
             Wheels(mb, 0.68f, 0.85f, 0.3f);
             Lamps(mb, 1.3f, -1.31f, 0.5f);
         }
+
+        /// <summary>Ambulance van: tall box body behind a short cab, side stripes and crosses, a red and blue light bar.</summary>
+        static void BuildAmbulance(MeshBuilder mb, Color body)
+        {
+            Color stripe = Luma(body) > 0.45f ? Hex("#c8372d") : Hex("#e9e6df");
+            // Cab up front, tall box behind.
+            mb.Box(new Vector3(0f, 0.55f, 0.85f), new Vector3(1.42f, 0.6f, 0.9f), body);
+            mb.Box(new Vector3(0f, 1.0f, 0.78f), new Vector3(1.3f, 0.36f, 0.6f), body * 0.96f);
+            mb.Box(new Vector3(0f, 1.0f, 1.1f), new Vector3(1.16f, 0.3f, 0.04f), Palette.Cabin);
+            mb.Box(new Vector3(0f, 0.95f, -0.45f), new Vector3(1.44f, 1.4f, 1.75f), body);
+            // Stripes along both sides and the back, with a cross on each side.
+            mb.Box(new Vector3(-0.73f, 0.72f, -0.05f), new Vector3(0.03f, 0.16f, 2.5f), stripe);
+            mb.Box(new Vector3(0.73f, 0.72f, -0.05f), new Vector3(0.03f, 0.16f, 2.5f), stripe);
+            mb.Box(new Vector3(0f, 0.72f, -1.33f), new Vector3(1.44f, 0.16f, 0.03f), stripe);
+            foreach (float side in new[] { -0.735f, 0.735f })
+            {
+                mb.Box(new Vector3(side, 1.2f, -0.45f), new Vector3(0.03f, 0.5f, 0.16f), stripe);
+                mb.Box(new Vector3(side, 1.2f, -0.45f), new Vector3(0.03f, 0.16f, 0.5f), stripe);
+            }
+            // Light bar: red and blue lamps on the box's front edge.
+            mb.Box(new Vector3(0f, 1.68f, 0.32f), new Vector3(1.0f, 0.06f, 0.2f), Palette.Metal);
+            mb.Box(new Vector3(-0.3f, 1.76f, 0.32f), new Vector3(0.36f, 0.12f, 0.16f), Palette.Tail * 2.5f);
+            mb.Box(new Vector3(0.3f, 1.76f, 0.32f), new Vector3(0.36f, 0.12f, 0.16f), Palette.ShieldBlue * 2.5f);
+            // Rear doors seam.
+            mb.Box(new Vector3(0f, 0.95f, -1.335f), new Vector3(0.03f, 1.2f, 0.02f), Palette.Cabin);
+            Wheels(mb, 0.72f, 0.88f, 0.31f);
+            Lamps(mb, 1.31f, -1.34f, 0.62f);
+        }
+
+        static float Luma(Color c) => c.r * 0.3f + c.g * 0.59f + c.b * 0.11f;
     }
 }

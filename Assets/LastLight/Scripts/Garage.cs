@@ -51,6 +51,7 @@ namespace LastLight
         readonly MeshRenderer stageRenderer, stageRendererOld, scanRing;
         readonly Material stageMat, stageMatOld;
         readonly StoragePanel storage;
+        readonly TraitsPanel traits;
         float swapTime = SwapSeconds;
         int shownVehicle = -1;
         static readonly int ScanY = Shader.PropertyToID("_ScanY");
@@ -64,7 +65,7 @@ namespace LastLight
         readonly UISprite[] swatchFills = new UISprite[4];
         readonly UISprite[] swatchLocks = new UISprite[4];
         readonly UISprite swatchRing, cursor, actionCoin;
-        readonly Label coinCount, colorName, actionCost, vehicleName, blurb;
+        readonly Label coinCount, colorName, actionCost, vehicleName, blurb, perk;
         readonly List<GazeButton> focusables = new List<GazeButton>();
         readonly GazeFocus focus = new GazeFocus();
         float scroll, scrollTarget, time;
@@ -172,7 +173,8 @@ namespace LastLight
             colorName = new Label(panelRoot, "Colour Name", "", 0.4f, TextAnchor.MiddleRight, Palette.UIIvory, new Vector2(5.5f, swY - 0.95f));
 
             vehicleName = new Label(panelRoot, "Vehicle", "", 0.5f, TextAnchor.MiddleLeft, Palette.UIIvory, new Vector2(-5.4f, swY - 0.95f));
-            blurb = new Label(panelRoot, "Blurb", "", 0.36f, TextAnchor.MiddleLeft, new Color(0.8f, 0.76f, 0.66f), new Vector2(-5.4f, swY - 1.6f));
+            blurb = new Label(panelRoot, "Blurb", "", 0.32f, TextAnchor.MiddleLeft, new Color(0.8f, 0.76f, 0.66f), new Vector2(-5.4f, swY - 1.45f));
+            perk = new Label(panelRoot, "Perk", "", 0.27f, TextAnchor.MiddleLeft, Palette.Route, new Vector2(-5.4f, swY - 1.85f));
 
             float actY = swY - 3.0f;
             action = new GazeButton(panelRoot, "Action", "btn_drive", new Vector2(-1.4f, actY), new Vector2(6.6f, 1.65f), alphaMat);
@@ -191,11 +193,13 @@ namespace LastLight
             focusables.Add(back);
 
             storage = new StoragePanel(parent, solidMat, glowMat, alphaMat, addMat, progress, headLocal);
+            traits = new TraitsPanel(parent, alphaMat, addMat, progress, headLocal);
 
             Visible = false;
         }
 
         public StoragePanel Storage => storage;
+        public TraitsPanel Traits => traits;
 
         public bool Visible
         {
@@ -205,6 +209,7 @@ namespace LastLight
                 stageRoot.gameObject.SetActive(value);
                 panelRoot.gameObject.SetActive(value);
                 storage.Visible = value;
+                traits.Visible = value;
                 if (!value) focus.Clear();
             }
         }
@@ -233,6 +238,7 @@ namespace LastLight
         public Vector3 SwatchWorldCenter(int i) => swatches[i].root.position;
         public Vector3 ScrollDownWorldCenter => down.root.position;
         public Vector3 LookPoint => Vector3.Lerp(stageRoot.position, panelRoot.position, 0.5f);
+        public Vector3 TraitsLookPoint => traits.root.position;
         public bool CardVisible(int i) => cards[i].button.Visible;
 
         void SetPreview(int vehicle)
@@ -264,11 +270,17 @@ namespace LastLight
             if (swapTime < SwapSeconds) swapTime += dt;
             Refresh(dt);
 
-            // The storage panel on the other side of the garage takes the gaze when it's looked at.
+            // The storage panel on the other side of the garage, and the traits panel above it, take the gaze when looked at.
             if (storage.Tick(dt, gaze, select, log, out bool boughtStorage, out bool refusedStorage))
             {
                 purchased = boughtStorage;
                 refused = refusedStorage;
+                return GarageAction.Changed;
+            }
+            if (traits.Tick(dt, gaze, select, log, out bool boughtTrait, out bool refusedTrait))
+            {
+                purchased = boughtTrait;
+                refused = refusedTrait;
                 return GarageAction.Changed;
             }
 
@@ -423,6 +435,7 @@ namespace LastLight
             colorName.Text = owned ? def.colorNames[Mathf.Clamp(previewColor, 0, def.colorNames.Length - 1)].ToUpperInvariant() : "";
             vehicleName.Text = def.name;
             blurb.Text = def.blurb;
+            perk.Text = def.perk;
 
             // Action button: Unlock (with price), Drive This, or Equipped.
             if (!owned)

@@ -101,7 +101,7 @@ namespace LastLight
             stats.Text = respawnsUsed > 0
                 ? $"{distance:0} M      {runCoins} COINS THIS RUN      {respawnsUsed} RESPAWN{(respawnsUsed > 1 ? "S" : "")}"
                 : $"{distance:0} M      {runCoins} COINS THIS RUN";
-            cost.Text = respawnCost.ToString();
+            cost.Text = respawnCost == 0 ? "FREE" : respawnCost.ToString();
             coinCount.Text = bank.ToString("N0");
             respawn.Enabled = bank >= respawnCost;
             cost.Color = respawn.Enabled ? Palette.UIIvory : Palette.Danger;

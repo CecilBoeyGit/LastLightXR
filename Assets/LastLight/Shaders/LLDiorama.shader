@@ -22,6 +22,7 @@ Shader "LastLight/Diorama"
         _ScanMode ("Scan (0 off, 1 keep below the line, -1 keep above)", Float) = 0
         _ScanColor ("Scan Edge Colour", Color) = (0.35, 0.9, 1, 1)
         _ScanWidth ("Scan Edge Width (object units)", Float) = 0.3
+        _SnowCover ("Snow Settles On This (0/1)", Range(0, 1)) = 1
     }
     SubShader
     {
@@ -50,6 +51,7 @@ Shader "LastLight/Diorama"
                 half _ScanMode;
                 half4 _ScanColor;
                 float _ScanWidth;
+                half _SnowCover;
             CBUFFER_END
 
             TEXTURE2D(_RoadMap);
@@ -68,7 +70,7 @@ Shader "LastLight/Diorama"
             float4 _LL_ScoutColor;  // rgb amber
             float4 _LL_GhostColor;  // rgb ghost tint
             float4 _LL_Reveal;
-            float4 _LL_Weather;     // x fog over the scouting region, y wet surfaces, z lightning flash      // xz forward direction of the disk, y reveal strength, w outer range (world)
+            float4 _LL_Weather;     // x fog over the scouting region, y wet surfaces, z lightning flash, w settled snow      // xz forward direction of the disk, y reveal strength, w outer range (world)
 
             struct Attributes
             {
@@ -207,6 +209,16 @@ Shader "LastLight/Diorama"
                 float cone = saturate((dot(hdir, normalize(_LL_HeadDir.xyz)) - 0.80) / 0.15);
                 float fall = saturate(1.0 - hd / max(_LL_HeadPos.w, 1e-4));
                 light += half3(1.0, 0.92, 0.75) * cone * fall * fall * 1.6;
+
+                // Snow: it settles white on upward-facing surfaces, a little patchy, and dulls the moonlight sheen.
+                half snow = _LL_Weather.w * _SnowCover;
+                if (snow > 0.01)
+                {
+                    float2 cell = floor(i.positionWS.xz * 40.0);
+                    half grain = frac(sin(dot(cell, float2(12.9898, 78.233))) * 43758.5453);
+                    half cover = saturate((N.y - 0.42) * 2.4) * snow * (0.82 + 0.18 * grain);
+                    albedo = lerp(albedo, half3(0.78, 0.83, 0.9), cover);
+                }
 
                 // Rain: wet surfaces darken and pick up glints from the moon and headlights. Lightning flashes everything.
                 half wet = _LL_Weather.y;

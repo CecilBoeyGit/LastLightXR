@@ -2,13 +2,14 @@ using UnityEngine;
 
 namespace LastLight
 {
-    public enum HazardKind { FallenTree, Boulder, DeadEnd }
+    public enum HazardKind { FallenTree, Boulder, DeadEnd, Barricade }
     public enum BoulderState { Warning, Falling, Landed, Swept, Smashed }
 
     /// <summary>
     /// A road hazard. Fallen trees block part of the road from the moment their chunk is generated.
     /// Boulders fall from a cliff toward the car, can be swept away, and block if left alone.
-    /// Dead-end walls close a whole branch of a split road.
+    /// Dead-end walls close a whole branch of a split road. Barricades close one lane of a three-lane stretch.
+    /// In a storm, broken branches (fallen-tree hazards with a drift) blow across the road and act like trees.
     /// Positions are chunk-local game units; the chunk scrolls, so hazards scroll with it.
     /// </summary>
     public class Hazard : MonoBehaviour
@@ -30,6 +31,13 @@ namespace LastLight
         public Vector3 velocity, spinAxis;
         public float spinSpeed;
         public Transform pebbles;
+
+        // Blown branch motion (storm): chunk-local X speed, and the X where it leaves the road and is removed.
+        public float driftX;
+        public float driftEndX;
+        public float tumble;
+
+        public bool Blown => driftX != 0f;
 
         // Scouting memory
         public bool discovered;
@@ -79,6 +87,18 @@ namespace LastLight
         /// <summary>Advances fall and sweep motion. Returns true when the boulder just landed.</summary>
         public bool Tick(float dt)
         {
+            if (alive && driftX != 0f)
+            {
+                // A branch tumbling across the road on the wind, with a little hop.
+                timer += dt;
+                Vector3 p = transform.localPosition;
+                p.x += driftX * dt;
+                p.y = Mathf.Abs(Mathf.Sin(timer * 5.5f)) * 0.25f;
+                transform.localPosition = p;
+                transform.localRotation = Quaternion.AngleAxis(Mathf.Sin(timer * 3f) * 18f + tumble, Vector3.up) * Quaternion.AngleAxis(Mathf.Sin(timer * 7f) * 10f, Vector3.forward);
+                if ((driftX > 0f && p.x > driftEndX) || (driftX < 0f && p.x < driftEndX)) { alive = false; gameObject.SetActive(false); }
+                return false;
+            }
             if (!alive || kind != HazardKind.Boulder) return false;
             timer += dt;
             switch (state)
