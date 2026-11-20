@@ -23,9 +23,14 @@ namespace LastLight
         const float HorizonLimit = -0.02f;      // flatter than this, aim at the edge of the scouting range
 
         // Speed-adaptive smoothing: steady during a stare, quick on a glance, never stop-go.
-        const float MinCutoffHz = 1.6f;
-        const float SpeedCutoffGain = 0.09f;
-        const float SpeedFilterHz = 1.2f;
+        const float MinCutoffHz = 1.0f;
+        const float SpeedCutoffGain = 0.07f;
+        const float SpeedFilterHz = 1.0f;
+        const float PatchSmoothTime = 0.1f;
+        // The raw gaze ray (used for staring at pickups, panel buttons and the beacon) gets a lighter filter
+        // of its own, so the cursors stop shivering without lagging behind a deliberate glance.
+        const float RayMinCutoffHz = 3f;
+        const float RayCutoffPerDegree = 0.35f;
         const float DiagnosticSeconds = 5f;
 
         public GazeSource Source { get; private set; } = GazeSource.None;
@@ -35,6 +40,18 @@ namespace LastLight
 
         /// <summary>While true, the flashlight powerup reveals the whole scouting region without gaze.</summary>
         public bool FlashlightActive;
+
+        /// <summary>0 clear to 1 thick fog. Fog smothers the scout light, so only the flashlight still reveals what's ahead.</summary>
+        public float Fog;
+
+        /// <summary>The bright dot floating over the scout light. Hidden during a run, where it only distracts.</summary>
+        public bool ShowOrb = true;
+
+        /// <summary>True while fog is thick enough that the scout light no longer reveals anything.</summary>
+        public bool Fogged => Fog > 0.5f && !FlashlightActive;
+
+        /// <summary>True while the dot over the scout light is showing.</summary>
+        public bool OrbVisible => orb.gameObject.activeSelf;
 
         /// <summary>When set, the autopilot or tests supply the gaze point (diorama-local).</summary>
         public Vector3? ScriptedTarget;
@@ -57,6 +74,7 @@ namespace LastLight
         public bool IsLit(Vector3 local)
         {
             if (FlashlightActive) return true;
+            if (Fogged) return false;
             var flat = new Vector2(local.x - Patch.x, local.z - Patch.z);
             return Intensity > 0.3f && flat.magnitude < PatchRadius;
         }
@@ -65,6 +83,7 @@ namespace LastLight
         readonly Transform head;
         readonly Material glowMat;
         readonly Transform orb, pool;
+        readonly MeshRenderer poolRenderer;
         readonly MaterialPropertyBlock mpb = new MaterialPropertyBlock();
         static readonly int TintId = Shader.PropertyToID("_Tint");
         static Mesh markerMesh;
@@ -76,6 +95,8 @@ namespace LastLight
         float lostTimer = 99f;
         float eyeLostTimer = 99f;
         Vector3 lastEyeDir;
+        Vector3 smoothRayDir;
+        bool hasSmoothRay;
         float eyeStaleTimer;
         float diagTimer;
         int diagEye, diagEyeFail, diagEyeStale, diagHead, diagNone, diagClamped;
@@ -95,7 +116,8 @@ namespace LastLight
             // Faint pool plus a thin edge ring: the ghost terrain inside stays readable.
             mb.SoftDisc(Vector3.zero, PatchRadius, 32, new Color(1f, 0.62f, 0.22f, 0.06f), new Color(1f, 0.55f, 0.2f, 0f));
             mb.Ring(Vector3.zero, PatchRadius * 0.97f, PatchRadius, 40, new Color(1f, 0.62f, 0.22f, 0.35f));
-            pool = MeshBuilder.Spawn("Scout Pool", diorama.transform, mb.ToMesh("LL_ScoutPool"), glowMat).transform;
+            poolRenderer = MeshBuilder.Spawn("Scout Pool", diorama.transform, mb.ToMesh("LL_ScoutPool"), glowMat);
+            pool = poolRenderer.transform;
 
             if (markerMesh == null)
             {
@@ -137,15 +159,20 @@ namespace LastLight
                 targetVelocity = Vector3.zero;
             }
 
-            Patch = Vector3.SmoothDamp(Patch, target, ref patchVel, 0.06f, 400f, Mathf.Max(dt, 1e-4f));
+            Patch = Vector3.SmoothDamp(Patch, target, ref patchVel, PatchSmoothTime, 400f, Mathf.Max(dt, 1e-4f));
             ReportDiagnostics(dt);
             float wanted = lostTimer < HoldAfterLoss ? 1f : 0f;
             Intensity = Mathf.MoveTowards(Intensity, wanted, dt * (wanted > Intensity ? 4f : 1.5f));
 
             orb.localPosition = Patch + Vector3.up * 3.2f;
-            orb.gameObject.SetActive(Intensity > 0.01f);
+            bool orbOn = ShowOrb && Intensity > 0.01f;
+            if (orb.gameObject.activeSelf != orbOn) orb.gameObject.SetActive(orbOn);
             pool.localPosition = Patch + Vector3.up * 0.1f;
             pool.gameObject.SetActive(Intensity > 0.01f);
+            // In fog the pool dims to a grey smudge: the light is still there, it just can't see through.
+            float poolLight = Mathf.Lerp(1f, 0.3f, Fogged ? Mathf.Clamp01(Fog) : 0f);
+            mpb.SetColor(TintId, new Color(poolLight, poolLight, poolLight, 1f));
+            poolRenderer.SetPropertyBlock(mpb);
 
             UpdateMemory(dt, hazards);
         }
@@ -250,10 +277,13 @@ namespace LastLight
         {
             local = default;
             Vector3 o = diorama.ToLocal(worldRay.origin);
-            Vector3 d = diorama.DirToLocal(worldRay.direction);
+            Vector3 d = diorama.DirToLocal(worldRay.direction).normalized;
+            // Live gaze shivers; scripted rays from tests and the autopilot stay exact.
+            if (Source != GazeSource.Scripted) d = SmoothRay(d);
+            else hasSmoothRay = false;
             localRayValid = true;
             localRayOrigin = o;
-            localRayDir = d.normalized;
+            localRayDir = d;
 
             // Looking far away or above the horizon keeps the light at the edge of its range, in the
             // direction of the gaze. Rejecting those rays is what used to freeze the light in place.
@@ -273,6 +303,22 @@ namespace LastLight
             return true;
         }
 
+        /// <summary>
+        /// A one-euro style filter on the ray direction: a low cutoff while the eyes rest on something, rising
+        /// with the size of the jump, so small tremors are smoothed and real glances come through at once.
+        /// </summary>
+        Vector3 SmoothRay(Vector3 d)
+        {
+            float dt = Mathf.Max(Time.unscaledDeltaTime, 1e-3f);
+            if (!Application.isPlaying) dt = 1f / 30f;
+            if (!hasSmoothRay) { smoothRayDir = d; hasSmoothRay = true; return d; }
+            float degrees = Vector3.Angle(smoothRayDir, d);
+            float cutoff = RayMinCutoffHz + RayCutoffPerDegree * degrees / dt * 0.05f;
+            float a = 1f - Mathf.Exp(-2f * Mathf.PI * cutoff * dt);
+            smoothRayDir = Vector3.Slerp(smoothRayDir, d, a).normalized;
+            return smoothRayDir;
+        }
+
         static Vector3 ClampToRange(Vector3 p)
         {
             p.y = 0f;
@@ -289,7 +335,7 @@ namespace LastLight
                 if (h == null || !h.alive) continue;
                 Vector3 p = h.DioramaLocal;
                 Vector2 flat = new Vector2(p.x - Patch.x, p.z - Patch.z);
-                bool lit = FlashlightActive || (Intensity > 0.5f && flat.magnitude < PatchRadius * 0.9f);
+                bool lit = FlashlightActive || (!Fogged && Intensity > 0.5f && flat.magnitude < PatchRadius * 0.9f);
                 bool beyondRim = !Diorama.InsideDisk(p);
                 if (lit && beyondRim)
                 {

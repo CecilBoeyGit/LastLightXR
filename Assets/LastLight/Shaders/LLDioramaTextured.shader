@@ -52,6 +52,7 @@ Shader "LastLight/DioramaTextured"
             float4 _LL_ScoutColor;
             float4 _LL_GhostColor;
             float4 _LL_Reveal;
+            float4 _LL_Weather;     // x fog over the scouting region, y wet surfaces, z lightning flash
 
             struct Attributes
             {
@@ -112,7 +113,7 @@ Shader "LastLight/DioramaTextured"
                 {
                     float ahead = step(0.0, dot(toDisk, _LL_Reveal.xz));
                     float inRange = step(diskDist, _LL_Reveal.w);
-                    float ghostMask = max(scoutMask, _LL_Reveal.y * ahead * inRange * 0.8);
+                    float ghostMask = max(scoutMask * saturate(1.0 - _LL_Weather.x * 1.25), _LL_Reveal.y * ahead * inRange * 0.8);
                     if (ghostMask <= 0.02) discard;
                     float2 px = floor(i.positionCS.xy);
                     float pattern = fmod(px.x + px.y, 2.0);
@@ -136,7 +137,17 @@ Shader "LastLight/DioramaTextured"
                 float fall = saturate(1.0 - hd / max(_LL_HeadPos.w, 1e-4));
                 light += half3(1.0, 0.92, 0.75) * cone * fall * fall * 1.6;
 
+                half wet = _LL_Weather.y;
+                albedo *= lerp(1.0, 0.7, wet);
+                light += half3(0.75, 0.82, 1.0) * _LL_Weather.z * 0.7;
                 half3 col = albedo * light + albedo * _Emission;
+                if (wet > 0.01)
+                {
+                    float3 V = normalize(_WorldSpaceCameraPos - i.positionWS);
+                    float3 Hm = normalize(normalize(_LL_Moon.xyz) + V);
+                    half spec = pow(saturate(dot(N, Hm)), 32.0) * _LL_Moon.w * 0.7 + pow(saturate(dot(N, normalize(-hdir + V))), 24.0) * cone * fall;
+                    col += half3(0.8, 0.86, 1.0) * min(spec, 0.3) * wet * 0.5;
+                }
 
                 float edge = saturate((diskDist / max(_LL_Disk.w, 1e-4) - 0.82) / 0.18);
                 col *= lerp(1.0, 0.55, edge * (_ClipToDisk > 0.5 ? 1.0 : 0.0));

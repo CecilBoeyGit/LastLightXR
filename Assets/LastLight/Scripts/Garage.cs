@@ -27,6 +27,9 @@ namespace LastLight
         const float ListTop = 3.3f;                  // centre of the first visible card slot
         const int VisibleCards = 2;
         const float ModelScale = 1.05f;
+        /// <summary>Seconds the turntable takes to swap one vehicle for another.</summary>
+        public const float SwapSeconds = 2f;
+        const float DissolveEnd = 1.0f, BuildStart = 0.85f;     // old one goes over the first second, new one builds after
 
         class Card
         {
@@ -44,7 +47,16 @@ namespace LastLight
 
         readonly Progress progress;
         readonly Transform turntable;
-        readonly MeshFilter stageVehicle;
+        readonly MeshFilter stageVehicle, stageVehicleOld;
+        readonly MeshRenderer stageRenderer, stageRendererOld, scanRing;
+        readonly Material stageMat, stageMatOld;
+        readonly StoragePanel storage;
+        float swapTime = SwapSeconds;
+        int shownVehicle = -1;
+        static readonly int ScanY = Shader.PropertyToID("_ScanY");
+        static readonly int ScanMode = Shader.PropertyToID("_ScanMode");
+        static readonly int ScanColorId = Shader.PropertyToID("_ScanColor");
+        static readonly int ScanWidth = Shader.PropertyToID("_ScanWidth");
         readonly Transform lockedSign;
         readonly Card[] cards;
         readonly GazeButton up, down, action, back;
@@ -80,10 +92,29 @@ namespace LastLight
             mb.Cylinder(Vector3.zero, 4.4f, 0.22f, 32, Palette.Metal * 0.8f);
             mb.Ring(new Vector3(0f, 0.23f, 0f), 3.9f, 4.2f, 32, Palette.UIAmber * 0.9f);
             MeshBuilder.Spawn("Turntable Plate", turntable, mb.ToMesh("LL_Turntable"), solidMat);
-            var sv = MeshBuilder.Spawn("Display Vehicle", turntable, VehicleCatalog.GetMesh(0, 0), solidMat);
-            sv.transform.localPosition = new Vector3(0f, 0.22f, 0f);
-            sv.transform.localScale = Vector3.one * StageVehicleScale;
-            stageVehicle = sv.GetComponent<MeshFilter>();
+            // Two display slots, each with its own material copy for the scan-line swap.
+            stageMat = new Material(solidMat) { name = "LL_GarageVehicle" };
+            stageMatOld = new Material(solidMat) { name = "LL_GarageVehicleOld" };
+            stageRenderer = MeshBuilder.Spawn("Display Vehicle", turntable, VehicleCatalog.GetMesh(0, 0), stageMat);
+            stageRenderer.transform.localPosition = new Vector3(0f, 0.22f, 0f);
+            stageRenderer.transform.localScale = Vector3.one * StageVehicleScale;
+            stageVehicle = stageRenderer.GetComponent<MeshFilter>();
+            stageRendererOld = MeshBuilder.Spawn("Display Vehicle (Outgoing)", turntable, VehicleCatalog.GetMesh(0, 0), stageMatOld);
+            stageRendererOld.transform.localPosition = new Vector3(0f, 0.22f, 0f);
+            stageRendererOld.transform.localScale = Vector3.one * StageVehicleScale;
+            stageVehicleOld = stageRendererOld.GetComponent<MeshFilter>();
+            stageRendererOld.gameObject.SetActive(false);
+            foreach (var m in new[] { stageMat, stageMatOld })
+            {
+                m.SetColor(ScanColorId, new Color(0.35f, 0.9f, 1f, 1f));
+                m.SetFloat(ScanWidth, 0.35f);
+                m.SetFloat(ScanMode, 0f);
+            }
+            var scanMb = new MeshBuilder();
+            scanMb.Ring(Vector3.zero, 3.7f, 4.25f, 40, new Color(0.35f, 0.9f, 1f, 0.9f));
+            scanMb.SoftDisc(Vector3.zero, 3.7f, 40, new Color(0.35f, 0.9f, 1f, 0.12f), new Color(0.35f, 0.9f, 1f, 0.02f));
+            scanRing = MeshBuilder.Spawn("Scan Ring", turntable, scanMb.ToMesh("LL_GarageScanRing"), glowMat);
+            scanRing.gameObject.SetActive(false);
 
             mb.Clear();
             mb.Ring(Vector3.zero, 1.2f, 1.45f, 24, new Color(1f, 0.45f, 0.3f, 0.9f));
@@ -159,8 +190,12 @@ namespace LastLight
             focusables.Add(action);
             focusables.Add(back);
 
+            storage = new StoragePanel(parent, solidMat, glowMat, alphaMat, addMat, progress, headLocal);
+
             Visible = false;
         }
+
+        public StoragePanel Storage => storage;
 
         public bool Visible
         {
@@ -169,6 +204,7 @@ namespace LastLight
             {
                 stageRoot.gameObject.SetActive(value);
                 panelRoot.gameObject.SetActive(value);
+                storage.Visible = value;
                 if (!value) focus.Clear();
             }
         }
@@ -179,8 +215,17 @@ namespace LastLight
             Visible = true;
             SetPreview(progress.Vehicle);
             scroll = scrollTarget;
+            // No swap animation on opening: the driven vehicle is simply there.
+            shownVehicle = Preview;
+            swapTime = SwapSeconds;
             Refresh(0f);
         }
+
+        /// <summary>True while the turntable is swapping one vehicle for another.</summary>
+        public bool Swapping => swapTime < SwapSeconds;
+        public float SwapTime => swapTime;
+        public bool OutgoingVisible => stageRendererOld.gameObject.activeSelf;
+        public int ShownVehicle => shownVehicle;
 
         public Vector3 CardWorldCenter(int i) => cards[i].root.position;
         public Vector3 ActionWorldCenter => action.root.position;
@@ -194,6 +239,7 @@ namespace LastLight
         {
             Preview = Mathf.Clamp(vehicle, 0, VehicleCatalog.Count - 1);
             previewColor = progress.ColorOf(Preview);
+            if (Visible) StartSwapIfNeeded();
             // Scroll so the previewed card is in view.
             float maxScroll = Mathf.Max(0, VehicleCatalog.Count - VisibleCards);
             if (Preview < scrollTarget) scrollTarget = Preview;
@@ -215,7 +261,16 @@ namespace LastLight
             purchased = refused = false;
             time += dt;
             scroll = Mathf.Lerp(scroll, scrollTarget, 1f - Mathf.Exp(-10f * dt));
+            if (swapTime < SwapSeconds) swapTime += dt;
             Refresh(dt);
+
+            // The storage panel on the other side of the garage takes the gaze when it's looked at.
+            if (storage.Tick(dt, gaze, select, log, out bool boughtStorage, out bool refusedStorage))
+            {
+                purchased = boughtStorage;
+                refused = refusedStorage;
+                return GarageAction.Changed;
+            }
 
             Vector2 point = default;
             bool onPanel = gaze.HasValue && GazeFocus.Hit(panelRoot, gaze.Value, out point)
@@ -296,8 +351,10 @@ namespace LastLight
             bool owned = progress.IsUnlocked(Preview);
             int shownColor = owned ? previewColor : 0;
 
-            // Turntable vehicle.
+            // Turntable vehicle. Picking another vehicle starts a two-second scan-line swap.
+            StartSwapIfNeeded();
             stageVehicle.sharedMesh = VehicleCatalog.GetMesh(Preview, shownColor);
+            UpdateSwap();
             turntable.localRotation = Quaternion.Euler(0f, time * 28f + 150f, 0f);
             lockedSign.gameObject.SetActive(!owned);
             lockedSign.localRotation = Quaternion.Euler(90f, 0f, 0f) * Quaternion.Euler(0f, 0f, Mathf.Sin(time * 2f) * 8f);
@@ -385,6 +442,56 @@ namespace LastLight
                 actionCost.Visible = false;
                 action.Enabled = progress.Vehicle != Preview;
             }
+        }
+
+        /// <summary>
+        /// The swap: a scan line climbs the outgoing vehicle and eats it away, then climbs again and builds the
+        /// new one, with a glowing ring rising round the turntable on the line.
+        /// </summary>
+        /// <summary>Starts the swap the moment a different vehicle is picked, not a frame later.</summary>
+        void StartSwapIfNeeded()
+        {
+            if (shownVehicle == Preview || shownVehicle < 0) { shownVehicle = Preview; return; }
+            stageVehicleOld.sharedMesh = stageVehicle.sharedMesh;
+            shownVehicle = Preview;
+            swapTime = 0f;
+            stageVehicle.sharedMesh = VehicleCatalog.GetMesh(Preview, progress.IsUnlocked(Preview) ? previewColor : 0);
+            UpdateSwap();
+        }
+
+        void UpdateSwap()
+        {
+            bool swapping = swapTime < SwapSeconds;
+            bool outgoing = swapping && swapTime < DissolveEnd && stageVehicleOld.sharedMesh != null;
+            if (stageRendererOld.gameObject.activeSelf != outgoing) stageRendererOld.gameObject.SetActive(outgoing);
+            if (scanRing.gameObject.activeSelf != swapping) scanRing.gameObject.SetActive(swapping);
+            if (!swapping)
+            {
+                stageMat.SetFloat(ScanMode, 0f);
+                return;
+            }
+            float ringY = 0f;
+            if (outgoing)
+            {
+                Bounds ob = stageVehicleOld.sharedMesh.bounds;
+                float k = Mathf.SmoothStep(0f, 1f, swapTime / DissolveEnd);
+                float y = Mathf.Lerp(ob.min.y - 0.4f, ob.max.y + 0.4f, k);
+                stageMatOld.SetFloat(ScanMode, -1f);        // keep what's above the line
+                stageMatOld.SetFloat(ScanY, y);
+                ringY = y;
+            }
+            Bounds nb = stageVehicle.sharedMesh.bounds;
+            float b = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(BuildStart, SwapSeconds, swapTime));
+            float ny = Mathf.Lerp(nb.min.y - 0.4f, nb.max.y + 0.4f, b);
+            stageMat.SetFloat(ScanMode, 1f);                // keep what's below the line
+            stageMat.SetFloat(ScanY, ny);
+            if (!outgoing) ringY = ny;
+            scanRing.transform.localPosition = new Vector3(0f, 0.22f + ringY * StageVehicleScale, 0f);
+            float fade = Mathf.Min(1f, swapTime / 0.15f, (SwapSeconds - swapTime) / 0.2f);
+            scanRing.transform.localScale = Vector3.one * (1f + 0.04f * Mathf.Sin(time * 20f));
+            var block = new MaterialPropertyBlock();
+            block.SetColor("_Tint", new Color(1f, 1f, 1f, Mathf.Clamp01(fade)));
+            scanRing.SetPropertyBlock(block);
         }
 
         string actionArt;

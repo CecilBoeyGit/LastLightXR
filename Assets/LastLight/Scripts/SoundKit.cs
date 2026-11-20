@@ -5,8 +5,8 @@ namespace LastLight
     /// <summary>Short procedural cues. They stand in for controller vibration and warn about off-beam danger.</summary>
     public class SoundKit
     {
-        public AudioClip grab, commit, cancel, sweep, hit, rumble, brake, gameOver, coin, powerup, scrape, shieldBreak, spit, splash, gun, smash;
-        readonly AudioSource source;
+        public AudioClip grab, commit, cancel, sweep, hit, rumble, brake, gameOver, coin, powerup, scrape, shieldBreak, spit, splash, gun, smash, thunder, skid, gazeArm;
+        readonly AudioSource source, rain;
 
         public SoundKit(GameObject host)
         {
@@ -29,6 +29,26 @@ namespace LastLight
             splash = Noise("splash", 0.35f, 0.4f, 5f);
             gun = Noise("gun", 0.05f, 0.5f, 9f);
             smash = Noise("smash", 0.4f, 0.55f, 1.5f);
+            thunder = Noise("thunder", 2.2f, 0.75f, 0.25f);
+            skid = Noise("skid", 0.45f, 0.3f, 8f);
+            gazeArm = Tone("gazearm", 0.1f, 990f, 1480f, 0.25f);
+
+            // A looping hiss of rain, faded with the storm.
+            rain = host.AddComponent<AudioSource>();
+            rain.playOnAwake = false;
+            rain.spatialBlend = 0f;
+            rain.loop = true;
+            rain.volume = 0f;
+            rain.clip = Noise("rain", 2f, 0.35f, 9f, true);
+        }
+
+        /// <summary>Sets the rain loop's volume, starting or stopping it as needed.</summary>
+        public void SetRain(float volume)
+        {
+            if (!Application.isPlaying) return;
+            rain.volume = volume;
+            if (volume > 0.001f && !rain.isPlaying) rain.Play();
+            else if (volume <= 0.001f && rain.isPlaying) rain.Stop();
         }
 
         public void Play(AudioClip clip, float volume = 1f)
@@ -53,7 +73,7 @@ namespace LastLight
             return c;
         }
 
-        static AudioClip Noise(string name, float seconds, float vol, float smooth)
+        static AudioClip Noise(string name, float seconds, float vol, float smooth, bool loop = false)
         {
             int rate = 44100, n = Mathf.CeilToInt(seconds * rate);
             var data = new float[n];
@@ -63,7 +83,8 @@ namespace LastLight
             {
                 float t = i / (float)n;
                 y = Mathf.Lerp(y, (float)rng.NextDouble() * 2f - 1f, k);
-                data[i] = y * vol * Mathf.Sin(t * Mathf.PI);
+                // A loop keeps a steady level so its seam doesn't pulse.
+                data[i] = y * vol * (loop ? 1f : Mathf.Sin(t * Mathf.PI));
             }
             var c = AudioClip.Create(name, n, 1, rate, false);
             c.SetData(data, 0);

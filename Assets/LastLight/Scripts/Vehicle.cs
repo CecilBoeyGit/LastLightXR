@@ -38,8 +38,19 @@ namespace LastLight
         public float screenOffset;      // where the road centre at the car sits on the disk
         public float acid;              // seconds of acid slow left, drives the goo on the body
         public float invulnerable;      // seconds of respawn grace left; the body blinks meanwhile
+        /// <summary>0 dry to 1 full storm: the jeep answers the steering more sluggishly and slides about.</summary>
+        public float slip;
+
+        /// <summary>Degrees the body is turned from straight up the disk: the road's own heading plus the steering.</summary>
+        public float Heading { get; private set; }
+        /// <summary>Degrees the road at the jeep is turned from straight up the disk.</summary>
+        public float RoadHeading { get; private set; }
+        /// <summary>Degrees of extra turn from sideways steering, on top of the road's heading.</summary>
+        public float SteerHeading { get; private set; }
+        public bool Skidding => skidTime > 0f;
 
         float xVel, boostVel;
+        float skidVel, skidTime, skidLength;
         float fallY, fallVelocity, fallTilt;
         readonly Transform root;
         readonly Transform body;
@@ -111,6 +122,14 @@ namespace LastLight
             acid = 0f;
             x = targetX = roadX;
             xVel = 0f;
+            skidTime = 0f;
+        }
+
+        /// <summary>Starts a sideways slide at <paramref name="velocity"/> units per second that dies away over the given time.</summary>
+        public void Skid(float velocity, float seconds)
+        {
+            skidVel = velocity;
+            skidTime = skidLength = Mathf.Max(seconds, 0.05f);
         }
 
         public void Reset()
@@ -136,18 +155,34 @@ namespace LastLight
             boostVel = 0f;
             lastDrift = 0f;
             screenOffset = 0f;
+            slip = 0f;
+            skidTime = 0f;
             Place(0f, 0f);
         }
 
-        /// <summary>Applies curve drift and the road's limits, then eases the car toward its steering target.</summary>
+        /// <summary>
+        /// Applies curve drift, any skid and the road's limits, then eases the car toward its steering target.
+        /// A skid shoves the body sideways straight away and carries the steering target with it, so a held
+        /// beacon has to be pulled back to correct it.
+        /// </summary>
         public void Steer(float dt, float slope, float driftFactor, float min, float max)
         {
             lastDrift = -slope * speed * driftFactor * dt;
+            if (skidTime > 0f)
+            {
+                float k = skidTime / skidLength;
+                float push = skidVel * k * dt;
+                lastDrift += push;
+                x += push;
+                skidTime -= dt;
+            }
             if (!dragging) targetX += lastDrift;
 
             scraping = speed > 0.5f && (targetX < min - 0.01f || targetX > max + 0.01f || x < min - 0.01f || x > max + 0.01f);
             targetX = Mathf.Clamp(targetX, min, max);
-            x = Mathf.SmoothDamp(x, targetX, ref xVel, 0.16f, 30f, Mathf.Max(dt, 1e-4f));
+            // Wet roads: the jeep takes longer to answer the wheel.
+            float response = Mathf.Lerp(0.16f, 0.3f, Mathf.Clamp01(slip));
+            x = Mathf.SmoothDamp(x, targetX, ref xVel, response, 30f, Mathf.Max(dt, 1e-4f));
             x = Mathf.Clamp(x, min, max);
         }
 
@@ -203,8 +238,13 @@ namespace LastLight
             float shake = hitFlash > 0f ? Mathf.Sin(time * 70f) * 0.08f * hitFlash : 0f;
             if (scraping) shake += Mathf.Sin(time * 55f) * 0.04f;
             body.localPosition = new Vector3(shake, bob, 0f);
-            float yaw = Mathf.Atan(slope) * Mathf.Rad2Deg * 0.7f + Mathf.Clamp(xVel * 3.5f, -20f, 20f);
-            body.localRotation = Quaternion.Euler(0f, yaw, Mathf.Clamp(-xVel * 1.5f, -6f, 6f));
+            // Point straight along the road, so the body lines up with the road-relative collision box on
+            // curves too, then turn a little more into a sideways move (and flick the tail out in a skid).
+            RoadHeading = Mathf.Atan(slope) * Mathf.Rad2Deg;
+            float lateral = xVel + (skidTime > 0f ? skidVel * (skidTime / skidLength) * 0.6f : 0f);
+            SteerHeading = Mathf.Clamp(Mathf.Atan2(lateral, Mathf.Max(speed, 3f)) * Mathf.Rad2Deg, -22f, 22f);
+            Heading = RoadHeading + SteerHeading;
+            body.localRotation = Quaternion.Euler(0f, Heading, Mathf.Clamp(-xVel * 1.5f, -6f, 6f));
         }
 
         /// <summary>

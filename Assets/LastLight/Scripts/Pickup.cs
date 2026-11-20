@@ -77,6 +77,21 @@ namespace LastLight
             gameObject.SetActive(false);
         }
 
+        /// <summary>The 3D icon for a pickup kind, shared with the storage compartment and its garage shop.</summary>
+        public static Mesh IconMesh(PickupKind kind)
+        {
+            BuildMeshes();
+            return kind switch
+            {
+                PickupKind.Booster => boosterMesh,
+                PickupKind.Shield => shieldMesh,
+                PickupKind.Flashlight => flashlightMesh,
+                PickupKind.Turret => turretMesh,
+                PickupKind.Shovel => shovelMesh,
+                _ => coinMesh
+            };
+        }
+
         static void BuildMeshes()
         {
             if (coinMesh != null) return;

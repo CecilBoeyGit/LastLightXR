@@ -337,6 +337,8 @@ namespace LastLight.EditorTools
             float minShooterOffRoad = float.MaxValue;
             float spitWeightAtLaunch = -1f;     // lowest spit-clip weight seen just before a glob launches
             bool spittersUseModels = true, anySpitter = false;
+            int orbFramesInRun = 0, alignedCurveFrames = 0, misalignedFrames = 0;
+            float maxRoadHeading = 0f;
 
             void Shot(string name)
             {
@@ -359,6 +361,18 @@ namespace LastLight.EditorTools
                 firstSightingSpitters = Mathf.Max(firstSightingSpitters, spawns.Count(s => s >= TrackGenerator.MediumStageFrom && s < TrackGenerator.MediumStageFrom + 150f));
                 lateWindowSpitters = Mathf.Max(lateWindowSpitters, spawns.Count(s => s >= 900f && s < 1050f));
                 if (director.Track.GuaranteedShieldS >= 0f) guaranteedShieldS = director.Track.GuaranteedShieldS;
+                if (director.State == RunState.Running)
+                {
+                    if (director.Scout.OrbVisible) orbFramesInRun++;
+                    // The body points along the road on curves, plus only the turn from sideways steering.
+                    var car = director.Car;
+                    maxRoadHeading = Mathf.Max(maxRoadHeading, Mathf.Abs(car.RoadHeading));
+                    if (Mathf.Abs(car.RoadHeading) > 6f && Mathf.Abs(car.SteerHeading) < 1.5f)
+                    {
+                        if (Mathf.Abs(Mathf.DeltaAngle(car.Body.localEulerAngles.y, car.RoadHeading)) < 1.6f) alignedCurveFrames++;
+                        else misalignedFrames++;
+                    }
+                }
                 if (director.State == RunState.Running)
                     foreach (Gauge g in System.Enum.GetValues(typeof(Gauge)))
                     {
@@ -449,11 +463,12 @@ namespace LastLight.EditorTools
                         if (t >= 30f) Shot("curves");
                         if (t >= 32f && taken.Add("gauges"))
                         {
-                            // The rim gauges, seen from the player's head.
-                            Vector3 gaugeCentre = d.TransformPoint(new Vector3(Mathf.Cos(208f * Mathf.Deg2Rad) * 18f, 0.5f, Mathf.Sin(208f * Mathf.Deg2Rad) * 18f));
+                            // The dashboard cluster and the storage rack, seen from the player's head.
+                            Vector3 dash = director.Gauges.root.position;
                             Vector3 eyes = d.TransformPoint(director.HeadLocal);
-                            Render(cam, rt, eyes, gaugeCentre, Path.Combine(outDir, "view_gauges.png"));
-                            Render(cam, rt, eyes, Vector3.Lerp(gaugeCentre, d.position, 0.45f), Path.Combine(outDir, "view_gauges_wide.png"));
+                            Render(cam, rt, eyes, dash, Path.Combine(outDir, "view_dashboard.png"));
+                            Render(cam, rt, eyes, Vector3.Lerp(dash, d.position, 0.55f), Path.Combine(outDir, "view_dashboard_wide.png"));
+                            Render(cam, rt, eyes, director.Rack.root.position, Path.Combine(outDir, "view_storage_rack.png"));
                         }
                         if (director.BoostTime > 2.5f) Shot("boost");
                         if (director.Car.shield) Shot("shield");
@@ -512,8 +527,15 @@ namespace LastLight.EditorTools
             bool howFocused = director.Menu.Focused == StartMenu.HowToIndex;
             Render(cam, rt, headWorld, panelCenter, Path.Combine(outDir, "view_menu_focus_howto.png"));
             Press();
-            bool howOpened = director.State == RunState.Tutorial;
-            LookFor(panelCenter, TutorialPanel.Duration + 0.2f);
+            bool howOpened = director.State == RunState.Tutorial && director.Tutorial.Mode == TutorialMode.FromMenu;
+            LookFor(panelCenter, 2.0f);
+            Render(cam, rt, headWorld, panelCenter, Path.Combine(outDir, "view_howto_page1.png"));
+            LookFor(panelCenter, TutorialPanel.Duration - 2.0f + 1.6f);
+            bool howPage2 = director.State == RunState.Tutorial && director.Tutorial.Page == 1;
+            Render(cam, rt, headWorld, panelCenter, Path.Combine(outDir, "view_howto_obstacles.png"));
+            LookFor(director.Tutorial.ButtonWorldCenter, 0.4f);
+            bool backFocused = director.Tutorial.Focused >= 0;
+            Press();
             bool howReturned = director.State == RunState.Menu;
 
             // ----- Garage: open it, unlock and equip the pickup, paint it, come back -----
@@ -530,6 +552,15 @@ namespace LastLight.EditorTools
             LookFor(garage.CardWorldCenter(1), 0.4f);
             Press();
             bool previewLocked = garage.Preview == 1 && !director.Save.IsUnlocked(1);
+            bool swapStarted = garage.Swapping && garage.OutgoingVisible;
+            LookFor(garage.CardWorldCenter(1), 0.45f);
+            Render(cam, rt, headWorld, garage.stageRoot.position, Path.Combine(outDir, "view_garage_swap_out.png"));
+            LookFor(garage.CardWorldCenter(1), 0.95f);
+            bool swapBuilding = garage.Swapping && !garage.OutgoingVisible;
+            Render(cam, rt, headWorld, garage.stageRoot.position, Path.Combine(outDir, "view_garage_swap_in.png"));
+            LookFor(garage.CardWorldCenter(1), 0.8f);
+            bool swapDone = !garage.Swapping && !garage.OutgoingVisible && garage.ShownVehicle == 1;
+            stats.AppendLine($"Garage swap: started {swapStarted}, building {swapBuilding}, done {swapDone}");
             LookFor(garage.ActionWorldCenter, 0.4f);
             Press();
             bool refusedBroke = !director.Save.IsUnlocked(1);
@@ -550,6 +581,33 @@ namespace LastLight.EditorTools
             bool scrolled = garage.Scroll > 0.9f && garage.CardVisible(2) && !garage.CardVisible(0);
             Render(cam, rt, headWorld, garage.LookPoint, Path.Combine(outDir, "view_garage_unlocked.png"));
             Render(cam, rt, headWorld, garage.panelRoot.position, Path.Combine(outDir, "view_garage_panel_scrolled.png"));
+
+            // Storage: slots unlock in order for coins, items fill the first empty slot, a full compartment refuses.
+            var storage = garage.Storage;
+            bool oneFreeSlot = director.Save.StorageSlots == 1 && director.Save.SlotItem(0) == null;
+            LookFor(storage.SlotWorldCenter(2), 0.4f);
+            Press();
+            bool outOfOrderRefused = director.Save.StorageSlots == 1;
+            int coinsBeforeSlots = director.Save.Coins;
+            LookFor(storage.SlotWorldCenter(1), 0.4f);
+            Press();
+            LookFor(storage.SlotWorldCenter(2), 0.4f);
+            Press();
+            bool slotsUnlocked = director.Save.StorageSlots == 3 && director.Save.Coins == coinsBeforeSlots - StorageCatalog.SlotCost(1) - StorageCatalog.SlotCost(2);
+            director.Save.AddCoins(500);
+            int coinsBeforeItems = director.Save.Coins;
+            foreach (int item in new[] { 0, 2, 1 })     // shovel, turret, speed boost
+            {
+                LookFor(storage.CardWorldCenter(item), 0.4f);
+                Press();
+            }
+            bool itemsStored = director.Save.SlotItem(0) == PickupKind.Shovel && director.Save.SlotItem(1) == PickupKind.Turret && director.Save.SlotItem(2) == PickupKind.Booster
+                && director.Save.Coins == coinsBeforeItems - StorageCatalog.Price(PickupKind.Shovel) - StorageCatalog.Price(PickupKind.Turret) - StorageCatalog.Price(PickupKind.Booster);
+            int coinsWhenFull = director.Save.Coins;
+            LookFor(storage.CardWorldCenter(3), 0.4f);
+            Press();
+            bool fullRefused = director.Save.Coins == coinsWhenFull && director.Save.FreeSlot() < 0;
+            Render(cam, rt, headWorld, storage.root.position, Path.Combine(outDir, "view_garage_storage.png"));
             LookFor(garage.BackWorldCenter, 0.4f);
             Press();
             bool garageClosed = director.State == RunState.Menu && !garage.Visible && director.WorldRoot.gameObject.activeSelf;
@@ -560,25 +618,29 @@ namespace LastLight.EditorTools
             bool startFocused = director.Menu.Focused == 0;
             Render(cam, rt, headWorld, panelCenter, Path.Combine(outDir, "view_menu_focus_start.png"));
             Press();
-            bool tutorialBeforeRun = director.State == RunState.Tutorial;
+            bool tutorialBeforeRun = director.State == RunState.Tutorial && director.Tutorial.Mode == TutorialMode.BeforeRun;
             LookFor(panelCenter, 2.0f);
             Render(cam, rt, headWorld, panelCenter, Path.Combine(outDir, "view_tutorial_2s.png"));
             LookFor(panelCenter, 1.4f);
             Render(cam, rt, headWorld, panelCenter, Path.Combine(outDir, "view_tutorial_3s.png"));
-            int guard = 0;
-            while (director.State == RunState.Tutorial && guard++ < 300) LookFor(panelCenter, dt);
+            // No time limit: long past one loop, it's still waiting, and a pinch that isn't on Start does nothing.
+            LookFor(panelCenter, 5f);
+            bool tutorialWaits = director.State == RunState.Tutorial && director.Tutorial.Page == 0;
+            Press();
+            bool strayPinchIgnored = director.State == RunState.Tutorial;
+            LookFor(director.Tutorial.ButtonWorldCenter, 0.4f);
+            bool startButtonFocused = director.Tutorial.Focused >= 0;
+            Render(cam, rt, headWorld, panelCenter, Path.Combine(outDir, "view_tutorial_start_focus.png"));
             float tutorialSeconds = director.TutorialTime;
+            Press();
             bool runStartedAfterTutorial = director.State == RunState.Running;
             for (int i = 0; i < 30; i++) director.Tick(dt);
             bool worldMovesAfterTutorial = director.Distance > 0f;
 
-            // A retry also shows the card, and a fresh pinch skips it once it has been up for a moment.
+            // A retry shows the card again; looking at Start and pinching begins the run.
             director.Restart();
             bool retryShowsTutorial = director.State == RunState.Tutorial;
-            LookFor(panelCenter, 0.3f);
-            Press();
-            bool earlyPinchIgnored = director.State == RunState.Tutorial;
-            LookFor(panelCenter, 0.8f);
+            LookFor(director.Tutorial.ButtonWorldCenter, 0.4f);
             Press();
             bool skipWorks = director.State == RunState.Running;
             director.Scout.ScriptedWorldRay = null;
@@ -792,6 +854,119 @@ namespace LastLight.EditorTools
             stats.AppendLine($"New features: reached {reachedMedium:0} m for the turret test, turret {turretShots} rounds / {turretKills} kills, acid slowed to {acidSpeed * 10f:0} km/h, shovel {shovelSmashes} smashes, debris peak {maxDebris}, shooters spawned {shootersSpawned}");
             stats.AppendLine($"Lazy follow: small turn moved the panel {smallTurnMove * 100f:0.0} cm, {midway:0} deg off after 0.3 s, settled {settledOff:0.0} deg off");
 
+            // ----- Beacon: follows the pinch with a tether, glides back when let go, and can be grabbed by gaze -----
+            director.autopilot = false;
+            director.tutorialEachRun = false;
+            director.Restart();
+            director.Car.invulnerable = 1e6f;
+            Hold(0.5f);
+            HandFrame Hand(Vector3 at, bool pinching) => new HandFrame { tracked = true, pinchPoint = at, palm = at, pinching = pinching, pinchDistance = pinching ? 0.01f : 0.05f };
+            Vector3 BeaconWorld() => d.TransformPoint(director.Hands.BeaconLocal);
+            Vector3 grabAt = BeaconWorld();
+            director.ScriptedRightHand = Hand(grabAt, false); Hold(0.1f);
+            director.ScriptedRightHand = Hand(grabAt, true); Hold(dt);
+            bool beaconGrabbed = director.Hands.Dragging && !director.Hands.Flying;
+            float targetBefore = director.Car.targetX;
+            Vector3 moved = grabAt + d.right * 0.05f;
+            for (int i = 1; i <= 10; i++) { director.ScriptedRightHand = Hand(Vector3.Lerp(grabAt, moved, i / 10f), true); Hold(dt); }
+            Hold(0.1f);
+            float beaconToPinch = Vector3.Distance(director.Hands.BeaconLocal, d.InverseTransformPoint(moved));
+            bool beaconFollows = beaconToPinch < 0.05f && director.Hands.TetherVisible && director.Car.targetX > targetBefore + 0.8f;
+            Close("beacon_held");
+            Render(cam, rt, headWorld, d.TransformPoint(new Vector3(director.Car.ScreenX, 2f, director.Car.Z)), Path.Combine(outDir, "view_beacon_held.png"));
+            director.ScriptedRightHand = Hand(moved, false);
+            Hold(0.8f);
+            Vector3 rest = new Vector3(director.Car.ScreenX, 4.2f, director.Car.Z);
+            bool beaconReturns = !director.Hands.Dragging && !director.Hands.TetherVisible && Vector3.Distance(director.Hands.BeaconLocal, rest) < 0.4f;
+            // Out of reach: a pinch far from the beacon does nothing until a half-second stare arms it.
+            Vector3 farHand = BeaconWorld() + d.right * 0.22f + d.up * 0.06f - d.forward * 0.1f;
+            // Look well away first, so nothing is armed (a look at the road just ahead of the jeep would arm it).
+            director.Scout.ScriptedWorldRay = new Ray(headWorld, d.TransformPoint(new Vector3(-20f, 0f, 10f)) - headWorld);
+            director.ScriptedRightHand = Hand(farHand, false); Hold(1.5f);
+            director.ScriptedRightHand = Hand(farHand, true); Hold(dt);
+            bool farPinchIgnored = !director.Hands.Dragging;
+            director.ScriptedRightHand = Hand(farHand, false); Hold(0.1f);
+            director.Scout.ScriptedWorldRay = new Ray(headWorld, BeaconWorld() - headWorld);
+            Hold(0.3f);
+            bool notArmedYet = !director.Hands.GazeArmed;
+            Hold(0.35f);
+            bool gazeArmed = director.Hands.GazeArmed;
+            director.Scout.ScriptedWorldRay = null;
+            director.ScriptedRightHand = Hand(farHand, true); Hold(dt);
+            bool gazeGrabbed = director.Hands.Dragging && director.Hands.Flying;
+            Hold(0.06f);
+            Close("beacon_flying");
+            Hold(0.3f);
+            bool flewToPinch = !director.Hands.Flying && Vector3.Distance(director.Hands.BeaconLocal, d.InverseTransformPoint(farHand)) < 0.05f;
+            float targetAfterFly = director.Car.targetX;
+            for (int i = 1; i <= 10; i++) { director.ScriptedRightHand = Hand(farHand - d.right * 0.04f * i / 10f, true); Hold(dt); }
+            bool steersAfterFly = director.Car.targetX < targetAfterFly - 0.6f;
+            director.ScriptedRightHand = Hand(farHand, false); Hold(0.2f);
+            director.ScriptedRightHand = null;
+            stats.AppendLine($"Beacon: grabbed {beaconGrabbed}, follows {beaconFollows} ({beaconToPinch:0.000}), returns {beaconReturns}; far pinch ignored {farPinchIgnored}, not armed early {notArmedYet}, armed {gazeArmed}, gaze grabbed {gazeGrabbed}, flew {flewToPinch}, steers {steersAfterFly}");
+
+            // ----- Storage compartment in a run: a second's look uses an item, as if its powerup were collected -----
+            director.Restart();
+            director.Car.invulnerable = 1e6f;
+            Hold(0.5f);
+            void LookAtRack(int slot, float seconds)
+            {
+                director.Scout.ScriptedWorldRay = new Ray(headWorld, director.Rack.SlotWorldCenter(slot) - headWorld);
+                Hold(seconds);
+            }
+            int storeStart = director.EventLog.Count;
+            LookAtRack(0, 0.6f);
+            bool notUsedEarly = director.Save.SlotItem(0) == PickupKind.Shovel && !director.FrontShovel.Active;
+            Render(cam, rt, headWorld, director.Rack.root.position, Path.Combine(outDir, "view_storage_rack_dwell.png"));
+            LookAtRack(0, 0.55f);
+            bool shovelUsed = director.Save.SlotItem(0) == null && director.FrontShovel.Active && director.FrontShovel.HitsLeft == Shovel.MaxHits;
+            LookAtRack(0, 1.3f);
+            bool emptySlotIgnored = director.EventLog.Skip(storeStart).Count(l => l.Contains("Used a stored")) == 1;
+            LookAtRack(1, 1.15f);
+            bool stacked = director.Turret.Active && director.FrontShovel.Active && director.Save.SlotItem(1) == null;
+            director.GrantPowerup(PickupKind.Booster);
+            Hold(2f);
+            float boostBefore = director.BoostTime;
+            LookAtRack(2, 1.15f);
+            bool boostReplaced = director.BoostTime > boostBefore + 1.5f && director.EventLog.Skip(storeStart).Any(l => l.Contains("stored speed boost") && l.Contains("replaced"));
+            director.Scout.ScriptedWorldRay = null;
+
+            // ----- Weather: fog blinds the scout light unless a flashlight is on; storms make the jeep twitchy -----
+            director.autopilot = true;
+            director.autopilotMode = AutopilotMode.Normal;
+            director.Restart();
+            director.Car.invulnerable = 1e6f;
+            Hold(4f);
+            director.Weather.Force(WeatherKind.Fog, 12f);
+            Hold(2.5f);
+            Vector3 patch = director.Scout.Patch;
+            bool fogBlocks = director.Scout.Fogged && !director.Scout.IsLit(patch) && director.Weather.FogVisible && director.Gauges.LampOn(Lamp.Fog)
+                && Shader.GetGlobalVector("_LL_Weather").x > 0.9f;
+            Shot("fog");
+            director.GrantPowerup(PickupKind.Flashlight);
+            Hold(0.5f);
+            bool flashlightCutsFog = director.Scout.IsLit(new Vector3(0f, 0f, Diorama.Radius + 10f)) && !director.Weather.FogVisible;
+            Shot("fog_flashlight");
+            Hold(10f);
+            bool fogCleared = director.Weather.Kind == WeatherKind.Clear && !director.Scout.Fogged;
+            int stormStart = director.EventLog.Count;
+            director.Weather.Force(WeatherKind.Storm, 14f);
+            Hold(4f);
+            bool stormRain = director.Weather.RainVisible && director.Weather.Wetness > 0.5f && Shader.GetGlobalVector("_LL_Weather").y > 0.5f
+                && director.Hands.SteerGain > 1.5f && director.Car.slip > 0.9f && director.Gauges.LampOn(Lamp.Storm);
+            director.Weather.StrikeNow();
+            Hold(0.05f);
+            Shot("storm");
+            Close("storm");
+            Hold(6f);
+            Shot("storm_wet");
+            Close("storm_wet");
+            int skids = director.EventLog.Skip(stormStart).Count(l => l.Contains("Skidded"));
+            int strikes = director.Weather.Strikes;
+            Hold(5f);
+            bool stormCleared = director.Weather.Kind == WeatherKind.Clear && director.Hands.SteerGain < 1.01f;
+            director.autopilot = false;
+
             // Gaze sweep: a ray moves side to side and rises above the horizon, through the real ray handling.
             // The light must keep following it and stay lit, never freezing in place.
             director.autopilot = false;
@@ -830,12 +1005,13 @@ namespace LastLight.EditorTools
             void Check(string label, bool ok) => sb.AppendLine($"  {(ok ? "PASS" : "FAIL")}  {label}");
             Check("Game boots to the start menu", bootedToMenu);
             Check("Looking at How to Play focuses it", howFocused);
-            Check("Pinching How to Play opens the tutorial, which returns to the menu", howOpened && howReturned);
+            Check("How to Play shows steering and scouting, then an obstacles page, and Back returns to the menu", howOpened && howPage2 && backFocused && howReturned);
+            Check("Obstacles page: the jeep weaves clear of every rock and log", TutorialPanel.DodgesEveryObstacle());
             Check("Looking at Start Run and pinching starts the tutorial", startFocused && tutorialBeforeRun);
-            Check($"Tutorial lasts 5 s, then the run starts ({tutorialSeconds:0.00} s)", runStartedAfterTutorial && Mathf.Abs(tutorialSeconds - TutorialPanel.Duration) < 0.1f && worldMovesAfterTutorial);
+            Check($"Tutorial has no time limit and waits for Start ({tutorialSeconds:0.0} s up, stray pinch ignored)", tutorialWaits && strayPinchIgnored && tutorialSeconds > TutorialPanel.Duration * 1.5f);
+            Check("Looking at Start and pinching begins the run", startButtonFocused && runStartedAfterTutorial && worldMovesAfterTutorial);
             Check($"World stays frozen during the menu and tutorial ({frozenDistance:0.00} m moved)", frozenDistance == 0f);
-            Check("A retry shows the tutorial again", retryShowsTutorial);
-            Check("A fresh pinch skips the tutorial, but not in its first 0.8 s", earlyPinchIgnored && skipWorks);
+            Check("A retry shows the tutorial again, and Start begins it", retryShowsTutorial && skipWorks);
             Check("Tutorial hand pinches and slides the jeep left, then right", TutorialPanel.PinchedAt(2f) && !TutorialPanel.PinchedAt(0.3f)
                 && TutorialPanel.JeepOffsetAt(2f) < -50f && TutorialPanel.JeepOffsetAt(3.6f) > 50f && Mathf.Abs(TutorialPanel.JeepOffsetAt(4.9f)) < 1f);
             Check("Coins collected by driving through them", count("Coin collected") > 0);
@@ -897,7 +1073,38 @@ namespace LastLight.EditorTools
                 && Share(GameStage.Early, PickupKind.Shovel) >= 0.25f && Share(GameStage.Medium, PickupKind.Shovel) >= 0.25f);
             Check($"Shield ploughs through rocks and trees with no harm ({shieldSmashes} smashes)", shieldSmashes > 0 && shieldNoHarm);
             Check("Shield wears off after 10 s", shieldTimed);
-            Check("Rim gauges replace the text readout and stay in range", gaugesSane && GameObject.Find("HUD") == null && director.Gauges != null);
+            // 0.1.11 changes
+            Vector3 dashLocal = director.Gauges.root.localPosition;
+            Check($"Dashboard cluster floats ahead above the scouting region and stays in range (at {dashLocal})", gaugesSane && dashLocal.z > Diorama.Radius && dashLocal.y > 10f && GameObject.Find("Rim Gauges") == null);
+            Check($"Jeep body lines up with the road on curves ({alignedCurveFrames} aligned, {misalignedFrames} off, steepest road {maxRoadHeading:0} deg)", alignedCurveFrames > 30 && misalignedFrames == 0);
+            Check($"Gaze dot hidden during runs ({orbFramesInRun} frames shown)", orbFramesInRun == 0);
+            Check("Beacon sits in the pinch with a tether while held, and glides back when let go", beaconGrabbed && beaconFollows && beaconReturns);
+            Check("Out-of-reach beacon: a half-second stare arms it, a pinch flies it into the hand", farPinchIgnored && notArmedYet && gazeArmed && gazeGrabbed && flewToPinch && steersAfterFly);
+            Check("Picking a vehicle swaps the turntable model over 2 s with a scan transition", swapStarted && swapBuilding && swapDone);
+            Check("Storage starts with one free slot; slots unlock in order for coins", oneFreeSlot && outOfOrderRefused && slotsUnlocked);
+            Check("Items bought in the garage fill empty slots; a full compartment refuses", itemsStored && fullRefused);
+            Check("A 1 s look at a stored item uses it; empty slots ignore the gaze", notUsedEarly && shovelUsed && emptySlotIgnored);
+            Check("Different powerups stack; the same one replaces the equipped one", stacked && boostReplaced);
+            Check("Fog smothers the scout light and lights the FOG lamp", fogBlocks);
+            Check("A flashlight cuts through the fog", flashlightCutsFog);
+            Check("Fog clears when its time is up", fogCleared);
+            Check($"Storm: rain, wet surfaces, amplified steering and the STORM lamp", stormRain);
+            Check($"Storm: lightning and random skids ({strikes} strikes, {skids} skids)", strikes > 0 && skids > 0);
+            Check("Storm clears and handling returns to normal", stormCleared);
+            {
+                var starts = log.Where(l => l.Contains("rolls in for")).ToList();
+                bool ok = starts.Count(l => !l.Contains("(forced)")) > 0;
+                foreach (var l in starts)
+                {
+                    var m = System.Text.RegularExpressions.Regex.Match(l, @"for ([0-9.]+) s at ([0-9]+) m");
+                    if (!m.Success) continue;
+                    float secs = float.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+                    float at = float.Parse(m.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture);
+                    if (secs < WeatherSystem.MinSeconds - 0.01f || secs > WeatherSystem.MaxSeconds + 0.01f) ok = false;
+                    if (!l.Contains("(forced)") && at < TrackGenerator.MediumStageFrom - 1f) ok = false;
+                }
+                Check($"Weather only comes in the middle and late stages and lasts 10-15 s ({starts.Count} encounters)", ok);
+            }
             Check("Horde walkers are the rigged Tripo runner", director.Crowd.UsesModels);
             {
                 var propRenderers = Object.FindObjectsByType<MeshRenderer>(FindObjectsSortMode.None);

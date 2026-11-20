@@ -33,6 +33,10 @@ namespace LastLight
         const float GameOverInputDelay = 0.6f;  // and ignore pinches for a moment after it does
         const float RespawnGrace = 2.5f;        // seconds of blinking immunity after a respawn
         const float RespawnClearRange = 16f;    // obstacles this far ahead are cleared for a respawn
+        const float StormSteerGain = 0.7f;      // extra steering per unit of storm: hand moves are amplified
+        const float SkidGapMin = 1.2f, SkidGapMax = 2.6f;
+        const float SkidSpeedMin = 2.6f, SkidSpeedMax = 4.2f;   // game units per second at full storm
+        const float SkidSeconds = 0.45f;
 
         [Header("Scene references")]
         public Diorama diorama;
@@ -95,10 +99,14 @@ namespace LastLight
         [Tooltip("How strongly the passthrough is tinted black. 0 is the untouched room, 1 is fully black.")]
         public float passthroughTint = 0.3f;
 
+        [Header("Weather")]
+        [Tooltip("Fog and storm encounters in the middle and late stages of a run.")]
+        public bool weatherEnabled = true;
+
         [Header("Menu and tutorial")]
         [Tooltip("Show the title menu when the game starts.")]
         public bool showMenuOnBoot = true;
-        [Tooltip("Play the 5-second how-to-play card before every run.")]
+        [Tooltip("Show the how-to-play card before every run, until the player presses Start.")]
         public bool tutorialEachRun = true;
         [Tooltip("Where the menu and tutorial panel floats, in disk units: above and behind the far rim.")]
         public Vector3 uiPanelPosition = new Vector3(0f, 13f, 16f);
@@ -124,7 +132,11 @@ namespace LastLight
         public TurretGun Turret => turret;
         public Shovel FrontShovel => shovel;
         public Effects Fx => fx;
-        public RimGauges Gauges => gauges;
+        public DashboardCluster Gauges => gauges;
+        public WeatherSystem Weather => weather;
+        public StorageRack Rack => rack;
+        /// <summary>Stand-in hand frames for tests: when set, they replace the tracked hands.</summary>
+        public HandFrame? ScriptedLeftHand, ScriptedRightHand;
         public float AcidTime => car.acid;
         public int RespawnsThisRun => respawnsThisRun;
         public int NextRespawnCost => respawnBaseCost * (1 << Mathf.Min(respawnsThisRun, 20));
@@ -146,7 +158,11 @@ namespace LastLight
         HandInput leftHand, rightHand;
         SoundKit sound;
         TextMesh banner;
-        RimGauges gauges;
+        DashboardCluster gauges;
+        WeatherSystem weather;
+        StorageRack rack;
+        System.Random skidRng = new System.Random(1);
+        float skidIn = 1.5f;
         Material pickupMaterial;
         MeshRenderer dwellRing;
         Mesh dwellMesh;
@@ -283,13 +299,20 @@ namespace LastLight
             // Scout and steering visuals spawn under the disk itself; move them into the world too.
             foreach (Transform t in new List<Transform>(EnumerateChildren(diorama.transform)))
                 if (t != worldRoot) t.SetParent(worldRoot, false);
-            interventions.OnGrab = () => sound?.Play(sound.grab);
+            interventions.OnGrab = () => { sound?.Play(sound.grab); Log(interventions.Flying ? "Beacon grabbed by gaze: flying to the pinch" : "Beacon grabbed"); };
             interventions.OnRelease = () => sound?.Play(sound.commit, 0.5f);
+            interventions.OnGazeArmed = () => { sound?.Play(sound.gazeArm, 0.6f); Log("Beacon armed by gaze"); };
             interventions.OnSweep = (h, dir) => { h.Sweep(dir); sound?.Play(sound.sweep); Log("Swept boulder " + (dir > 0 ? "right" : "left")); };
             leftHand = new HandInput(trackingSpace);
             rightHand = new HandInput(trackingSpace);
             sound = Application.isPlaying ? new SoundKit(gameObject) : null;
             roadOffsetAtZ = z => track.Center(Distance + z - Diorama.CarZ) - track.Center(Distance);
+
+            weather = new WeatherSystem(worldRoot, glowMaterial, seed);
+            weather.OnStart = (k, secs) => Log($"Weather: {k} rolls in for {secs:0.0} s at {Distance:0} m{(weather.Forced ? " (forced)" : "")}");
+            weather.OnEnd = k => Log($"Weather: {k} clears at {Distance:0} m");
+            weather.OnLightning = () => Log("Lightning strike");
+            weather.OnThunder = () => sound?.Play(sound.thunder, 0.8f);
 
             dwellBlock = new MaterialPropertyBlock();
             dwellMesh = new Mesh { name = "LL_DwellRing" };
@@ -390,6 +413,7 @@ namespace LastLight
             tutorialTime = 0f;
             tutorialFromMenu = fromMenu;
             menu.Visible = false;
+            tutorial.SetMode(fromMenu ? TutorialMode.FromMenu : TutorialMode.BeforeRun);
             tutorial.Visible = true;
             tutorial.Show(0f);
             Log(fromMenu ? "How to play opened from the menu" : $"Tutorial shown before run {runIndex}");
@@ -412,6 +436,13 @@ namespace LastLight
             fx.Clear();
             turret.Reset();
             shovel.Reset();
+            weather.Reset(runSeed);
+            scout.Fog = 0f;
+            interventions.SteerGain = 1f;
+            skidRng = new System.Random(runSeed * 31 + 7);
+            skidIn = 1.5f;
+            rack?.Reset();
+            sound?.SetRain(0f);
             gameOverPanel.Visible = false;
             respawnsThisRun = 0;
             acidGrace = 0f;
@@ -439,8 +470,14 @@ namespace LastLight
             bool xr = XRSettings.isDeviceActive;
             HandFrame left = leftHand.Sample(Handedness.Left, dt);
             HandFrame right = rightHand.Sample(Handedness.Right, dt);
+            bool scriptedHands = ScriptedLeftHand.HasValue || ScriptedRightHand.HasValue;
+            if (scriptedHands)
+            {
+                left = ScriptedLeftHand ?? default;
+                right = ScriptedRightHand ?? default;
+            }
             if ((left.tracked && leftHand.SecondsLost == 0f) || (right.tracked && rightHand.SecondsLost == 0f)) handEverSeen = true;
-            bool handsAvailable = xr && leftHand.Available;
+            bool handsAvailable = (xr && leftHand.Available) || scriptedHands;
             // Either hand can play, so only losing both pauses the run. Controllers work until a hand first appears.
             bool handsRequired = handsAvailable && !autopilot && handEverSeen;
             float bothLost = Mathf.Min(leftHand.SecondsLost, rightHand.SecondsLost);
@@ -474,7 +511,8 @@ namespace LastLight
             }
 
             bool running = State == RunState.Running;
-            interventions.Tick(dt, left, right, handsAvailable, car, track.hazards, intents, running);
+            Ray? gazeLocal = scout.TryGetLocalRay(out Vector3 gro, out Vector3 grd) ? new Ray(gro, grd) : (Ray?)null;
+            interventions.Tick(dt, left, right, handsAvailable, car, track.hazards, intents, running, gazeLocal);
 
             if (running) Simulate(dt);
             else if (State == RunState.GameOver) TickGameOver(dt, select);
@@ -497,7 +535,10 @@ namespace LastLight
             car.UpdateFall(dt);
             car.Tick(running ? dt : 0f, CurrentTargetSpeed(running), time, boostTimer > 0f, slope);
             horde.Tick(Gap, time, running, track, Distance);
+            TickWeather(dt, running);
+            scout.ShowOrb = !(State == RunState.Running || State == RunState.Paused || State == RunState.GameOver);
             scout.Tick(running ? dt : dt * 0.25f, track.hazards, !xr);
+            TickStorage(dt, running);
             TickPickups(running ? dt : 0f);
             shooterSystem.Tick(dt, time, running, track, car, Distance, TrackGenerator.StageAt(Distance));
             TickGear(running ? dt : 0f);
@@ -509,6 +550,69 @@ namespace LastLight
             diorama.PushShaderGlobals(scout.Patch, GazeScout.PatchRadius, scout.Intensity, headLocal, new Vector3(0f, -0.12f, 1f), reveal);
             UpdateHud(dt);
         }
+
+        /// <summary>
+        /// Weather encounters and their effects: fog smothers the scout light (the flashlight still cuts through),
+        /// and a storm makes the jeep twitchy, amplifying steering and throwing in random skids.
+        /// </summary>
+        void TickWeather(float dt, bool running)
+        {
+            float reveal = flashTimer > 0f ? Mathf.Clamp01(flashTimer / 0.5f) : 0f;
+            if (weatherEnabled || weather.Active) weather.Tick(dt, running, TrackGenerator.StageAt(Distance), time, reveal);
+            scout.Fog = weather.FogAmount;
+            float storm = weather.StormAmount;
+            car.slip = storm;
+            interventions.SteerGain = 1f + StormSteerGain * storm;
+            sound?.SetRain(running ? storm * 0.35f : 0f);
+            if (!running) return;
+            if (storm > 0.3f)
+            {
+                skidIn -= dt;
+                if (skidIn <= 0f)
+                {
+                    skidIn = SkidGapMin + (float)skidRng.NextDouble() * (SkidGapMax - SkidGapMin);
+                    float dir = skidRng.NextDouble() < 0.5 ? -1f : 1f;
+                    float speed = (SkidSpeedMin + (float)skidRng.NextDouble() * (SkidSpeedMax - SkidSpeedMin)) * storm;
+                    // Cliff roads are unforgiving enough: skids there are gentler.
+                    if (track.OnCliffStretch(Distance + car.boostOffset)) speed *= 0.5f;
+                    car.Skid(dir * speed, SkidSeconds);
+                    sound?.Play(sound.skid, 0.5f);
+                    Log($"Skidded {(dir < 0f ? "left" : "right")} on the wet road");
+                }
+            }
+            else skidIn = Mathf.Max(skidIn, 0.8f);
+        }
+
+        /// <summary>The storage compartment on the player's right: a second's look uses a stored item.</summary>
+        void TickStorage(float dt, bool running)
+        {
+            if (rack == null) return;
+            int use = rack.Tick(dt, running ? WorldGazeRay() : null, running);
+            if (use < 0) return;
+            UseStoredItem(use);
+        }
+
+        /// <summary>Takes the item out of a compartment slot and applies it as if its powerup had been collected.</summary>
+        public bool UseStoredItem(int slot)
+        {
+            var item = progress.TakeItem(slot);
+            if (item == null) return false;
+            bool already = IsActive(item.Value);
+            Log($"Used a stored {StorageCatalog.Name(item.Value).ToLowerInvariant()} from slot {slot + 1}{(already ? ": the one already equipped is replaced" : "")}");
+            Apply(item.Value);
+            return true;
+        }
+
+        /// <summary>Whether a powerup's effect is running right now.</summary>
+        public bool IsActive(PickupKind kind) => kind switch
+        {
+            PickupKind.Booster => boostTimer > 0f,
+            PickupKind.Shield => car.shield,
+            PickupKind.Flashlight => flashTimer > 0f,
+            PickupKind.Turret => turret.Active,
+            PickupKind.Shovel => shovel.Active,
+            _ => false
+        };
 
         void TickMenu(float dt, bool select)
         {
@@ -673,15 +777,27 @@ namespace LastLight
             return false;
         }
 
+        /// <summary>
+        /// The how-to-play card has no time limit: it loops until the player looks at Start (or Back, from the
+        /// menu) and pinches. Enter or Space on a keyboard presses it too.
+        /// </summary>
         void TickTutorial(float dt, bool select)
         {
             tutorialTime += dt;
             tutorial.Show(tutorialTime);
-            bool skipped = select && tutorialTime > 0.8f;
-            if (tutorialTime < TutorialPanel.Duration && !skipped) return;
-            Log(skipped ? $"Tutorial skipped at {tutorialTime:0.0} s" : "Tutorial finished");
-            if (tutorialFromMenu) OpenMenu();
-            else StartRunning();
+            bool pressed = tutorial.Tick(dt, WorldGazeRay(), select) || pendingStart;
+            if (!pressed) return;
+            sound?.Play(sound.commit);
+            if (tutorialFromMenu)
+            {
+                Log($"Back pressed on How to Play after {tutorialTime:0.0} s");
+                OpenMenu();
+            }
+            else
+            {
+                Log($"Start pressed on the tutorial after {tutorialTime:0.0} s");
+                StartRunning();
+            }
         }
 
         /// <summary>Road-relative X of a disk-local point: 0 is the road centre at that point's place along the road.</summary>
@@ -1080,8 +1196,17 @@ namespace LastLight
             // Menu: Enter starts, H opens How to Play. Tutorial: Enter or Space skips.
             if (kb.enterKey.wasPressedThisFrame || kb.spaceKey.wasPressedThisFrame)
             {
-                if (State == RunState.Menu) pendingStart = true;
+                if (State == RunState.Menu || State == RunState.Tutorial) pendingStart = true;
                 else pendingSelect = true;
+            }
+            // Editor-only weather keys: J fog, L storm, 1-3 use a stored item.
+            if (Application.isEditor && State == RunState.Running)
+            {
+                if (kb.jKey.wasPressedThisFrame) weather.Force(WeatherKind.Fog);
+                if (kb.lKey.wasPressedThisFrame) weather.Force(WeatherKind.Storm);
+                if (kb.digit1Key.wasPressedThisFrame) UseStoredItem(0);
+                if (kb.digit2Key.wasPressedThisFrame) UseStoredItem(1);
+                if (kb.digit3Key.wasPressedThisFrame) UseStoredItem(2);
             }
             if (kb.hKey.wasPressedThisFrame && State == RunState.Menu) pendingHowTo = true;
             if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame) pendingSelect = true;
@@ -1296,9 +1421,11 @@ namespace LastLight
         void BuildHud()
         {
             Font font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            // Quarter-circle gauges around the island's lower-left rim, in place of the old text readout.
-            UISprite.LoadMaterials(out Material gaugeAlpha, out Material _);
-            gauges = new RimGauges(diorama.transform, glowMaterial, gaugeAlpha, HeadLocal);
+            // The instrument cluster floats beyond the far rim, at the top of the player's view.
+            UISprite.LoadMaterials(out Material gaugeAlpha, out Material gaugeAdd);
+            gauges = new DashboardCluster(diorama.transform, glowMaterial, gaugeAlpha, gaugeAdd, HeadLocal);
+            // The storage compartment floats on the player's right.
+            rack = new StorageRack(diorama.transform, pickupMaterial, glowMaterial, gaugeAlpha, gaugeAdd, progress, HeadLocal);
 
             var bannerGo = new GameObject("Banner").transform;
             bannerGo.SetParent(diorama.transform, false);
@@ -1340,6 +1467,7 @@ namespace LastLight
         {
             bool show = State != RunState.Menu && State != RunState.Tutorial && State != RunState.Garage;
             gauges.Visible = show;
+            rack.Visible = show;
             if (!show) return;
 
             float topSpeed = maxCruiseSpeed * BoostSpeedMultiplier;
@@ -1353,7 +1481,7 @@ namespace LastLight
             // Distance fills toward your best run, then turns gold once you pass it.
             bool newBest = Best > 0f && Distance > Best;
             gauges.Set(Gauge.Distance, Distance / Mathf.Max(Best, 300f), newBest ? $"{Distance:0} M  BEST!" : $"{Distance:0} M");
-            gauges.SetColor(Gauge.Distance, newBest ? RimGauges.Colors[(int)Gauge.Coins] : RimGauges.Colors[(int)Gauge.Distance]);
+            gauges.SetColor(Gauge.Distance, newBest ? DashboardCluster.Colors[(int)Gauge.Coins] : DashboardCluster.Colors[(int)Gauge.Distance]);
 
             // Coins fill toward the cheapest vehicle still locked in the garage.
             int goal = 0;
@@ -1361,18 +1489,22 @@ namespace LastLight
                 if (!progress.IsUnlocked(i) && (goal == 0 || VehicleCatalog.All[i].cost < goal)) goal = VehicleCatalog.All[i].cost;
             gauges.Set(Gauge.Coins, goal > 0 ? progress.Coins / (float)goal : 1f, Coins > 0 ? $"{progress.Coins:N0}  +{Coins}" : $"{progress.Coins:N0}");
 
-            string effects = "";
-            if (car.shield) effects += $"SHIELD {Mathf.CeilToInt(car.shieldTime)}S   ";
-            if (boostTimer > 0f) effects += $"BOOST {Mathf.CeilToInt(boostTimer)}S   ";
-            if (flashTimer > 0f) effects += $"LIGHT {Mathf.CeilToInt(flashTimer)}S   ";
-            if (turret.Active) effects += $"TURRET {Mathf.CeilToInt(turret.TimeLeft)}S   ";
-            if (shovel.Active) effects += $"SHOVEL x{shovel.HitsLeft}";
+            // Warning lamps: one per powerup and weather, lit with what's left.
+            gauges.SetLamp(Lamp.Shield, car.shield, $"{Mathf.CeilToInt(car.shieldTime)}S");
+            gauges.SetLamp(Lamp.Boost, boostTimer > 0f, $"{Mathf.CeilToInt(boostTimer)}S");
+            gauges.SetLamp(Lamp.Light, flashTimer > 0f, $"{Mathf.CeilToInt(flashTimer)}S");
+            gauges.SetLamp(Lamp.Turret, turret.Active, $"{Mathf.CeilToInt(turret.TimeLeft)}S");
+            gauges.SetLamp(Lamp.Shovel, shovel.Active, $"x{shovel.HitsLeft}");
+            gauges.SetLamp(Lamp.Fog, weather.Kind == WeatherKind.Fog, $"{Mathf.CeilToInt(weather.TimeLeft)}S");
+            gauges.SetLamp(Lamp.Storm, weather.Kind == WeatherKind.Storm, $"{Mathf.CeilToInt(weather.TimeLeft)}S");
             string alert = car.trapped ? "TRAPPED!"
                 : car.Stalled ? "STALLED"
                 : car.acid > 0f ? "ACID! SLOWED"
                 : car.invulnerable > 0f ? "RESPAWNED"
-                : car.scraping ? "SCRAPING THE EDGE" : "";
-            gauges.SetStatus(effects.TrimEnd(), alert);
+                : car.scraping ? "SCRAPING THE EDGE"
+                : car.Skidding ? "SKIDDING!"
+                : scout.Fogged ? "FOG: SCOUTING BLOCKED" : "";
+            gauges.SetAlert(alert);
             gauges.Tick(dt);
 
             switch (State)

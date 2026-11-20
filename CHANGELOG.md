@@ -4,6 +4,44 @@ Builds are release APKs for PICO Swan (Android, ARM64), package `com.lastlight.p
 Version history before git: 0.1.1 to 0.1.5 were built and installed but not committed, so the first
 commit holds the 0.1.6 source.
 
+## 0.1.11
+
+- Dashboard: the rim gauges are replaced by a car-style instrument cluster floating upright beyond the far rim,
+  at the top of your view and clear of the road and scouting region. A big speedometer with a needle and
+  digital km/h readout sits in the middle; the left dial shows the horde's distance with three health pips;
+  the right dial shows distance toward your best run with an inner ring of coins toward the next unlock.
+  Warning lamps across the top light up for each active powerup (shield, boost, light, turret, shovel) and
+  for fog or storm, with the time left.
+- Jeep heading: the body now points along the road on curves (it used to turn only 70% of the way), so it
+  lines up with the collision box and dodges look the way they play.
+- Gaze: the dot floating over the scout light is hidden during runs, and the gaze is smoothed a little more,
+  both the scout light and the gaze ray behind cursors, stares and the beacon.
+- Tutorial: no time limit before a run. The steering and scouting card loops until you look at Start and
+  pinch. How to Play from the menu alternates it with a new obstacles page (dodge rocks and logs, stay off a
+  cliff road's edges) and has a Back button.
+- Beacon: while held it sits right in your pinch, with a faint curved tether down to the jeep, and glides back
+  over the jeep when let go. If the jeep is out of reach, stare at the beacon for half a second (a ring fills
+  and it brightens), then pinch anywhere: it flies into your hand and follows it.
+- Garage: picking another vehicle swaps the turntable model over about 2 seconds: a ragged cyan scan line
+  climbs the old one and eats it away, then builds the new one, with a glowing ring riding the line.
+- Weather, from 300 m: fog and storm encounters lasting a random 10 to 15 seconds, the first soon after the
+  medium stage starts and closer together in the late stage. Fog rolls over the scouting region, so the scout
+  light reveals nothing (the FOG lamp lights and the alert says scouting is blocked); a flashlight burns
+  through it while it lasts. A storm brings rain, lightning and thunder, wet glossy surfaces, steering moves
+  amplified by up to 70%, a slower-answering jeep and random skids left and right (gentler on cliff roads).
+- Storage compartment: up to three slots on the player's right in a run, the first free, the second 300 and
+  the third 600 coins. The garage's new Storage panel (left of the garage) unlocks slots in order and sells
+  items: shovel 60, speed boost 40, turret 90, flashlight 50. Look at a stored item for a second in a run and it
+  is used exactly like the powerup. Using one that's already active replaces it (the timer or blade starts
+  fresh); different powerups stack.
+- Editor keys: J fog, L storm, 1 to 3 use a stored item.
+- Headless preview: checks for all of the above, plus renders of the dashboard, storage rack and panel,
+  tutorial pages, beacon, garage swap, fog and storm.
+
+## 0.1.10-test
+
+- Textured road, dirt verges and grass, and the Tripo pines, cliff boulders and grass tufts along the road.
+
 ## 0.1.9
 
 - Spitters ramp up: the first sighting, just past 300 m, is a single spitter. Groups then come closer together,

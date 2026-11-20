@@ -15,6 +15,9 @@ namespace LastLight
     /// Both hands can act on the jeep. Pinch the beacon and drag it anywhere across the road to steer,
     /// or sweep an open hand through a falling rock. Only one hand holds the beacon at a time, so the
     /// other stays free to sweep.
+    /// While held, the beacon sits in the pinch itself and a faint curved tether runs down to the jeep.
+    /// If the jeep has run out of reach, stare at the beacon for half a second to arm it, then pinch
+    /// anywhere: it flies to the pinch and follows it from there.
     /// </summary>
     public class Interventions
     {
@@ -22,6 +25,12 @@ namespace LastLight
         const float SweepReach = 0.085f;        // metres, plus the rock's own radius
         const float SweepSpeed = 0.45f;         // m/s of palm motion
         const float KeyboardSteerRate = 9f;     // game units per second
+        public const float GazeArmSeconds = 0.5f;
+        const float GazeRadius = 1.7f;          // game units around the beacon that count as looking at it
+        const float ArmedGrace = 1.2f;          // seconds an armed beacon stays armed after the eyes move on
+        const float FlySeconds = 0.18f;         // flight from the jeep into a gaze-grabbing pinch
+        const float RestHeight = 4.2f;
+        const int TetherSegments = 18;
 
         class HandState
         {
@@ -31,20 +40,39 @@ namespace LastLight
 
         public bool Dragging => dragHand >= 0;
         public bool BeaconHovered { get; private set; }
+        /// <summary>Seconds the eyes have rested on the beacon, toward arming it.</summary>
+        public float GazeDwell { get; private set; }
+        /// <summary>True once a stare has armed the beacon, so the next pinch anywhere grabs it.</summary>
+        public bool GazeArmed { get; private set; }
+        /// <summary>True while a gaze-grabbed beacon is still flying into the pinch.</summary>
+        public bool Flying => flyT < 1f && dragHand >= 0;
+        /// <summary>The beacon's current position, disk-local.</summary>
+        public Vector3 BeaconLocal => beacon.transform.localPosition;
+        public bool TetherVisible => tether.gameObject.activeSelf;
+        /// <summary>How much a hand movement is multiplied into steering. Storms raise it.</summary>
+        public float SteerGain = 1f;
 
         public System.Action OnGrab;
         public System.Action OnRelease;
+        public System.Action OnGazeArmed;
         public System.Action<Hazard, float> OnSweep;
 
         readonly Diorama diorama;
-        readonly MeshRenderer beacon, targetRing;
+        readonly MeshRenderer beacon, targetRing, tether, gazeRing;
+        readonly Mesh tetherMesh, gazeRingMesh;
+        readonly MeshBuilder mb = new MeshBuilder();
         readonly MaterialPropertyBlock mpb = new MaterialPropertyBlock();
         static readonly int TintId = Shader.PropertyToID("_Tint");
         readonly HandState[] hands = { new HandState(), new HandState() };
 
         int dragHand = -1;
-        float dragAnchor;
+        float dragBase, dragPinch0, dragGain = 1f;
         float time;
+        float armedLeft;
+        float flyT = 1f;
+        Vector3 flyFrom, beaconPos, beaconVel, pinchLocal;
+        bool beaconPlaced;
+        bool gazeGrab;
 
         public Interventions(Diorama diorama, Material glowMat)
         {
@@ -58,6 +86,13 @@ namespace LastLight
             mb.Ring(Vector3.zero, 0.75f, 0.95f, 24, Color.white);
             targetRing = MeshBuilder.Spawn("Steering Target", diorama.transform, mb.ToMesh("LL_SteerRing"), glowMat);
             targetRing.gameObject.SetActive(false);
+
+            tetherMesh = new Mesh { name = "LL_BeaconTether" };
+            tether = MeshBuilder.Spawn("Beacon Tether", diorama.transform, tetherMesh, glowMat);
+            tether.gameObject.SetActive(false);
+            gazeRingMesh = new Mesh { name = "LL_BeaconGazeRing" };
+            gazeRing = MeshBuilder.Spawn("Beacon Gaze Ring", beacon.transform, gazeRingMesh, glowMat);
+            gazeRing.gameObject.SetActive(false);
         }
 
         public void Reset()
@@ -68,13 +103,21 @@ namespace LastLight
                 h.wasPinching = false;
             }
             dragHand = -1;
+            GazeDwell = 0f;
+            GazeArmed = false;
+            armedLeft = 0f;
+            flyT = 1f;
+            beaconPlaced = false;
+            gazeGrab = false;
         }
 
-        public void Tick(float dt, HandFrame left, HandFrame right, bool handsActive, Vehicle car, IList<Hazard> hazards, IntentFrame intents, bool running)
+        /// <param name="gazeLocal">The gaze ray in disk-local units, if there is one, for staring at the beacon.</param>
+        public void Tick(float dt, HandFrame left, HandFrame right, bool handsActive, Vehicle car, IList<Hazard> hazards, IntentFrame intents, bool running, Ray? gazeLocal = null)
         {
             time += dt;
-            Vector3 beaconWorld = diorama.ToWorld(new Vector3(car.ScreenX, 4.2f, car.Z));
             BeaconHovered = false;
+            UpdateGazeArm(dt, gazeLocal, running && !car.falling && dragHand < 0);
+            Vector3 beaconWorld = diorama.ToWorld(beacon.transform.localPosition);
 
             for (int i = 0; i < 2; i++)
             {
@@ -88,24 +131,59 @@ namespace LastLight
             if (running && dragHand < 0)
             {
                 if (intents.setTarget.HasValue) car.targetX = intents.setTarget.Value;
-                else if (intents.steer != 0f) car.targetX += intents.steer * KeyboardSteerRate * dt;
+                else if (intents.steer != 0f) car.targetX += intents.steer * KeyboardSteerRate * SteerGain * dt;
                 if (intents.sweep) SweepNearest(car, hazards);
             }
-            UpdateVisuals(car);
+            UpdateVisuals(dt, car);
+        }
+
+        /// <summary>Half a second of looking at the beacon arms it; it stays armed for a moment after the eyes move on.</summary>
+        void UpdateGazeArm(float dt, Ray? gaze, bool allowed)
+        {
+            bool looking = false;
+            if (allowed && gaze.HasValue)
+            {
+                Vector3 to = beacon.transform.localPosition - gaze.Value.origin;
+                looking = Vector3.Dot(to, gaze.Value.direction) > 0f && Vector3.Cross(gaze.Value.direction.normalized, to).magnitude < GazeRadius;
+            }
+            if (!allowed) { GazeDwell = 0f; GazeArmed = false; armedLeft = 0f; return; }
+            if (looking)
+            {
+                GazeDwell = Mathf.Min(GazeArmSeconds, GazeDwell + dt);
+                if (GazeDwell >= GazeArmSeconds)
+                {
+                    if (!GazeArmed) OnGazeArmed?.Invoke();
+                    GazeArmed = true;
+                    armedLeft = ArmedGrace;
+                }
+            }
+            else
+            {
+                GazeDwell = Mathf.Max(0f, GazeDwell - dt * 1.5f);
+                if (GazeArmed && (armedLeft -= dt) <= 0f) GazeArmed = false;
+            }
         }
 
         void TickHand(int index, HandState state, HandFrame hand, Vehicle car, Vector3 beaconWorld, IList<Hazard> hazards)
         {
-            float pinchRel = diorama.ToLocal(hand.pinchPoint).x - car.screenOffset;
+            Vector3 local = diorama.ToLocal(hand.pinchPoint);
+            float pinchRel = local.x - car.screenOffset;
             bool pinchStarted = hand.pinching && !state.wasPinching;
             bool hovered = Vector3.Distance(hand.pinchPoint, beaconWorld) < GrabRadius;
             if (hovered) BeaconHovered = true;
 
             if (state.dragging)
             {
-                // The jeep follows the hand directly, and curves push against a steady hand too.
-                dragAnchor -= car.lastDrift;
-                car.targetX = pinchRel - dragAnchor;
+                // The jeep follows the hand, and curves (or a skid) push against a steady hand too.
+                // A storm multiplies hand movement into steering; a change of gain re-bases so nothing jumps.
+                dragBase += car.lastDrift;
+                if (!Mathf.Approximately(dragGain, SteerGain))
+                {
+                    dragBase = car.targetX - (pinchRel - dragPinch0) * SteerGain;
+                    dragGain = SteerGain;
+                }
+                car.targetX = dragBase + (pinchRel - dragPinch0) * dragGain;
+                pinchLocal = local;
                 if (!hand.pinching)
                 {
                     state.dragging = false;
@@ -113,11 +191,20 @@ namespace LastLight
                     OnRelease?.Invoke();
                 }
             }
-            else if (pinchStarted && hovered && dragHand < 0)
+            else if (pinchStarted && dragHand < 0 && (hovered || GazeArmed))
             {
                 state.dragging = true;
                 dragHand = index;
-                dragAnchor = pinchRel - car.targetX;
+                dragPinch0 = pinchRel;
+                dragBase = car.targetX;
+                dragGain = SteerGain;
+                pinchLocal = local;
+                // Grabbed from a distance by gaze: the beacon flies into the pinch first.
+                gazeGrab = !hovered;
+                flyT = gazeGrab ? 0f : 1f;
+                flyFrom = beacon.transform.localPosition;
+                GazeArmed = false;
+                GazeDwell = 0f;
                 OnGrab?.Invoke();
             }
             else TrySweep(hand, car, hazards);
@@ -172,16 +259,48 @@ namespace LastLight
             return Mathf.Sign(rel);
         }
 
-        void UpdateVisuals(Vehicle car)
+        void UpdateVisuals(float dt, Vehicle car)
         {
             bool held = dragHand >= 0;
             float pulse = 0.75f + 0.25f * Mathf.Sin(time * 4f);
-            float beaconX = held ? car.TargetScreenX : car.ScreenX;
-            beacon.transform.localPosition = new Vector3(beaconX, 4.2f + Mathf.Sin(time * 2f) * 0.15f, car.Z);
-            float b = held ? 1.6f : BeaconHovered ? 1.3f : pulse;
+            Vector3 rest = new Vector3(car.ScreenX, RestHeight + Mathf.Sin(time * 2f) * 0.15f, car.Z);
+            float step = Mathf.Max(dt, 1e-4f);
+            if (held)
+            {
+                // In the hand: right at the pinch, after a quick flight if it was grabbed by gaze.
+                if (flyT < 1f)
+                {
+                    flyT = Mathf.Min(1f, flyT + step / FlySeconds);
+                    float k = Mathf.SmoothStep(0f, 1f, flyT);
+                    Vector3 arc = Vector3.up * Mathf.Sin(k * Mathf.PI) * 1.2f;
+                    beaconPos = Vector3.Lerp(flyFrom, pinchLocal, k) + arc;
+                }
+                else beaconPos = pinchLocal;
+                beaconVel = Vector3.zero;
+            }
+            else if (!beaconPlaced) beaconPos = rest;
+            else beaconPos = Vector3.SmoothDamp(beaconPos, rest, ref beaconVel, 0.12f, 400f, step);   // let go: glide back over the jeep
+            beaconPlaced = true;
+            beacon.transform.localPosition = beaconPos;
+
+            float b = held ? 1.6f : GazeArmed ? 1.45f + 0.25f * Mathf.Sin(time * 14f) : BeaconHovered ? 1.3f : pulse;
             mpb.SetColor(TintId, new Color(b, b, b, 1f));
             beacon.SetPropertyBlock(mpb);
             if (beacon.gameObject.activeSelf == car.falling) beacon.gameObject.SetActive(!car.falling);
+
+            // The gaze ring fills round the beacon while you stare, and stays full while armed.
+            float fill = GazeArmed ? 1f : GazeDwell / GazeArmSeconds;
+            bool showRing = !held && !car.falling && fill > 0.02f;
+            if (gazeRing.gameObject.activeSelf != showRing) gazeRing.gameObject.SetActive(showRing);
+            if (showRing)
+            {
+                mb.Clear();
+                mb.Arc(Vector3.zero, 1.25f, 1.5f, fill, 32, Color.white);
+                mb.ToMesh(gazeRingMesh.name, gazeRingMesh);
+                Color gc = Palette.UIAmber * (GazeArmed ? 1.8f : 1.2f); gc.a = 1f;
+                mpb.SetColor(TintId, gc);
+                gazeRing.SetPropertyBlock(mpb);
+            }
 
             targetRing.gameObject.SetActive(held);
             if (held)
@@ -191,6 +310,46 @@ namespace LastLight
                 mpb.SetColor(TintId, rc);
                 targetRing.SetPropertyBlock(mpb);
             }
+
+            if (tether.gameObject.activeSelf != held) tether.gameObject.SetActive(held);
+            if (held) BuildTether(beaconPos, new Vector3(car.ScreenX, car.RoofY + 0.15f, car.Z));
+        }
+
+        /// <summary>
+        /// A faint curve from the beacon down to the jeep's roof: a quadratic Bezier that bows upward, drawn as
+        /// two crossed ribbons so it reads from any angle, fading toward the jeep.
+        /// </summary>
+        void BuildTether(Vector3 from, Vector3 to)
+        {
+            mb.Clear();
+            Vector3 mid = (from + to) * 0.5f + Vector3.up * (1.2f + 0.15f * Vector3.Distance(from, to));
+            Vector3 prev = from;
+            for (int i = 1; i <= TetherSegments; i++)
+            {
+                float t = i / (float)TetherSegments;
+                Vector3 p = (1 - t) * (1 - t) * from + 2 * (1 - t) * t * mid + t * t * to;
+                Vector3 dir = p - prev;
+                if (dir.sqrMagnitude > 1e-6f)
+                {
+                    float a0 = Mathf.Lerp(0.55f, 0.18f, (i - 1) / (float)TetherSegments), a1 = Mathf.Lerp(0.55f, 0.18f, t);
+                    Color c0 = new Color(1f, 0.72f, 0.35f, a0), c1 = new Color(1f, 0.72f, 0.35f, a1);
+                    Vector3 side = Vector3.Cross(dir.normalized, Vector3.up);
+                    if (side.sqrMagnitude < 1e-4f) side = Vector3.right;
+                    side = side.normalized * 0.07f;
+                    Vector3 up = Vector3.Cross(side, dir.normalized).normalized * 0.07f;
+                    Ribbon(prev, p, side, c0, c1);
+                    Ribbon(prev, p, up, c0, c1);
+                }
+                prev = p;
+            }
+            mb.ToMesh(tetherMesh.name, tetherMesh);
+        }
+
+        void Ribbon(Vector3 a, Vector3 b, Vector3 side, Color ca, Color cb)
+        {
+            // Two triangles with per-end colours, so the fade runs along the tether.
+            mb.Tri(a - side, b - side, b + side, ca);
+            mb.Tri(a - side, b + side, a + side, ca);
         }
     }
 }

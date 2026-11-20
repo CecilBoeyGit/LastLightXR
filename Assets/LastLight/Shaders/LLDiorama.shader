@@ -18,6 +18,10 @@ Shader "LastLight/Diorama"
         [NoScaleOffset] _GrassMap ("Grass (alpha 0.75)", 2D) = "gray" {}
         _GroundTile ("Tile Size (game units)", Float) = 6
         _TexColor ("Texture Colour (0 palette tone + texture detail, 1 texture colour)", Range(0, 1)) = 0
+        _ScanY ("Scan Height (object Y)", Float) = 0
+        _ScanMode ("Scan (0 off, 1 keep below the line, -1 keep above)", Float) = 0
+        _ScanColor ("Scan Edge Colour", Color) = (0.35, 0.9, 1, 1)
+        _ScanWidth ("Scan Edge Width (object units)", Float) = 0.3
     }
     SubShader
     {
@@ -42,6 +46,10 @@ Shader "LastLight/Diorama"
                 half _Fade;
                 float _GroundTile;
                 half _TexColor;
+                float _ScanY;
+                half _ScanMode;
+                half4 _ScanColor;
+                float _ScanWidth;
             CBUFFER_END
 
             TEXTURE2D(_RoadMap);
@@ -59,7 +67,8 @@ Shader "LastLight/Diorama"
             float4 _LL_Ambient;     // rgb ambient
             float4 _LL_ScoutColor;  // rgb amber
             float4 _LL_GhostColor;  // rgb ghost tint
-            float4 _LL_Reveal;      // xz forward direction of the disk, y reveal strength, w outer range (world)
+            float4 _LL_Reveal;
+            float4 _LL_Weather;     // x fog over the scouting region, y wet surfaces, z lightning flash      // xz forward direction of the disk, y reveal strength, w outer range (world)
 
             struct Attributes
             {
@@ -75,6 +84,7 @@ Shader "LastLight/Diorama"
                 float3 positionWS : TEXCOORD0;
                 float3 normalWS   : TEXCOORD1;
                 half4  color      : COLOR;
+                float  objY       : TEXCOORD4;
             #if defined(_LL_GROUND)
                 float2 groundUV   : TEXCOORD2;
                 half4  groundMean : TEXCOORD3;  // rgb the layer texture's average colour, a layer index (0 none)
@@ -91,6 +101,7 @@ Shader "LastLight/Diorama"
                 o.positionCS = TransformWorldToHClip(o.positionWS);
                 o.normalWS = TransformObjectToWorldNormal(v.normalOS);
                 o.color = v.color;
+                o.objY = v.positionOS.y;
             #if defined(_LL_GROUND)
                 // Object space, so the pattern rides along with each scrolling road chunk. Chunks are 12 units long,
                 // so a tile size that divides 12 keeps the seams between chunks invisible.
@@ -135,6 +146,20 @@ Shader "LastLight/Diorama"
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
                 if (_Fade < 0.999 && Bayer4(floor(i.positionCS.xy)) >= _Fade) discard;
 
+                // Garage swap: a ragged scan line eats the old vehicle away and builds the new one,
+                // with a bright band riding on the line and faint hologram stripes on what's been built.
+                half scanGlow = 0;
+                half scanStripes = 0;
+                if (abs(_ScanMode) > 0.5)
+                {
+                    float d = (i.objY - _ScanY) * _ScanMode;
+                    d += (Bayer4(floor(i.positionCS.xy * 0.5)) - 0.5) * _ScanWidth * 0.5;
+                    if (d > 0) discard;
+                    scanGlow = saturate(1.0 + d / max(_ScanWidth, 1e-3));
+                    scanGlow *= scanGlow;
+                    scanStripes = step(0.8, frac(i.objY * 9.0 + _Time.y * 2.0)) * 0.35;
+                }
+
                 float2 toDisk = i.positionWS.xz - _LL_Disk.xz;
                 float diskDist = length(toDisk);
                 float2 toScout = i.positionWS.xz - _LL_Scout.xz;
@@ -147,7 +172,7 @@ Shader "LastLight/Diorama"
                     // The flashlight powerup lights the whole scouting region ahead of the disk.
                     float ahead = step(0.0, dot(toDisk, _LL_Reveal.xz));
                     float inRange = step(diskDist, _LL_Reveal.w);
-                    float ghostMask = max(scoutMask, _LL_Reveal.y * ahead * inRange * 0.8);
+                    float ghostMask = max(scoutMask * saturate(1.0 - _LL_Weather.x * 1.25), _LL_Reveal.y * ahead * inRange * 0.8);
                     if (ghostMask <= 0.02) discard;
                     // Screen-door dither so the preview reads as translucent without sorting issues.
                     float2 px = floor(i.positionCS.xy);
@@ -183,7 +208,21 @@ Shader "LastLight/Diorama"
                 float fall = saturate(1.0 - hd / max(_LL_HeadPos.w, 1e-4));
                 light += half3(1.0, 0.92, 0.75) * cone * fall * fall * 1.6;
 
+                // Rain: wet surfaces darken and pick up glints from the moon and headlights. Lightning flashes everything.
+                half wet = _LL_Weather.y;
+                albedo *= lerp(1.0, 0.62, wet);
+                light += half3(0.75, 0.82, 1.0) * _LL_Weather.z * 0.7;
                 half3 col = albedo * light + albedo * _Emission;
+                if (wet > 0.01)
+                {
+                    float3 V = normalize(_WorldSpaceCameraPos - i.positionWS);
+                    float3 Hm = normalize(normalize(_LL_Moon.xyz) + V);
+                    float3 Hh = normalize(-hdir + V);
+                    float flatness = saturate(N.y * 1.4 - 0.2);
+                    half spec = pow(saturate(dot(N, Hm)), 64.0) * _LL_Moon.w * 0.22 + pow(saturate(dot(N, Hh)), 32.0) * cone * fall * 0.8;
+                    spec += _LL_Weather.z * 0.12;
+                    col += half3(0.8, 0.86, 1.0) * min(spec, 0.3) * wet * flatness;
+                }
 
                 // Darken toward the rim so the disk edge reads as a frame.
                 float edge = saturate((diskDist / max(_LL_Disk.w, 1e-4) - 0.82) / 0.18);
@@ -195,6 +234,7 @@ Shader "LastLight/Diorama"
                     float depth = saturate((_LL_Disk.y - i.positionWS.y) / (_LL_Disk.w * 0.35));
                     col *= (1.0 - depth) * (1.0 - depth);
                 }
+                col += _ScanColor.rgb * (scanGlow * 3.0 + scanStripes);
                 return half4(col, 1);
             }
             ENDHLSL
