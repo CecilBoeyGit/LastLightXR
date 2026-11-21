@@ -40,6 +40,10 @@ namespace LastLight
         public float invulnerable;      // seconds of respawn grace left; the body blinks meanwhile
         /// <summary>0 dry to 1 full storm: the jeep answers the steering more sluggishly and slides about.</summary>
         public float slip;
+        /// <summary>Recovery trait: 0.15 or 0.35 extra acceleration while getting back up to speed after a slow-down.</summary>
+        public float recoveryBoost;
+        /// <summary>True from a crash or acid hit until the jeep is back up to the speed it's aiming for.</summary>
+        public bool recovering;
 
         /// <summary>Degrees the body is turned from straight up the disk: the road's own heading plus the steering.</summary>
         public float Heading { get; private set; }
@@ -145,6 +149,7 @@ namespace LastLight
 
         public void Reset()
         {
+            recovering = false;
             x = 0f;
             targetX = 0f;
             xVel = 0f;
@@ -199,7 +204,8 @@ namespace LastLight
 
         public void Tick(float dt, float targetSpeed, float time, bool boosting, float slope)
         {
-            float accel = targetSpeed > speed ? 5f : 12f;
+            float accel = targetSpeed > speed ? 5f * (recovering ? 1f + recoveryBoost : 1f) : 12f;
+            if (recovering && speed >= targetSpeed - 0.05f && targetSpeed > 0.5f) recovering = false;
             speed = Mathf.MoveTowards(speed, targetSpeed, accel * dt);
             boostOffset = Mathf.SmoothDamp(boostOffset, boosting ? BoostForward : 0f, ref boostVel, 0.7f, 30f, Mathf.Max(dt, 1e-4f));
             if (stallTimer > 0f) stallTimer -= dt;

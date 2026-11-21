@@ -544,6 +544,7 @@ namespace LastLight
         void ApplyTraits()
         {
             scout.RadiusScale = TraitCatalog.VisibilityScale(progress.ActiveTraitLevel(Trait.Visibility));
+            car.recoveryBoost = TraitCatalog.RecoveryBoost(progress.ActiveTraitLevel(Trait.Recovery));
         }
 
         /// <summary>Advances the whole simulation by dt. Public so tests can drive it in edit mode.</summary>
@@ -935,7 +936,9 @@ namespace LastLight
                 return true;
             }
             car.speed *= acidSpeedKeep;
-            car.acid = acidSeconds;
+            // The Recovery trait shakes the acid's slow off sooner, and the jeep picks up speed faster after it.
+            car.acid = acidSeconds / (1f + car.recoveryBoost);
+            car.recovering = true;
             acidGrace = acidSeconds + 0.8f;
             car.hitFlash = 0.4f;
             boostTimer = 0f;
@@ -1187,6 +1190,7 @@ namespace LastLight
                 {
                     car.speed *= obstacleSpeedKeep;
                     car.hitFlash = 0.5f;
+                    car.recovering = true;
                 }
                 Shatter(h, new Vector3((hRel - car.x) * 2.5f, 1f, before * 0.75f));
                 sound?.Play(sound.smash);

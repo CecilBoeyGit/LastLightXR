@@ -1397,6 +1397,24 @@ namespace LastLight.EditorTools
                 && director.Coins == runCoinsBeforeThrow + rewardLines * GameDirector.RockHitCoins + coinPickups;
             stats.AppendLine($"Rock throw: target {(throwTarget != null ? throwTarget.DioramaLocal.ToString("0.0") : "none")}, not early {throwNotEarly}, thrown {rockThrown}, knocked down {rockKnockedDown}");
 
+            // ----- Recovery: back up to speed faster after a slow-down -----
+            float RegainSeconds(float boost)
+            {
+                director.autopilotMode = AutopilotMode.Normal;
+                director.Restart();
+                Run(200f, () => director.Distance > 120f);
+                director.Car.invulnerable = 1e6f;
+                director.Car.recoveryBoost = boost;
+                float cruise = director.CruiseSpeedNow;
+                director.Car.speed = cruise * 0.3f;
+                director.Car.recovering = true;
+                float t = 0f;
+                while (t < 10f && director.Car.speed < cruise * 0.9f) { director.Tick(dt); t += dt; }
+                return t;
+            }
+            float regainBase = RegainSeconds(0f), regainLv1 = RegainSeconds(TraitCatalog.RecoveryBoost(1)), regainLv2 = RegainSeconds(TraitCatalog.RecoveryBoost(2));
+            stats.AppendLine($"Recovery: back from 30% to 90% of cruise in {regainBase:0.00} s, {regainLv1:0.00} s at level 1, {regainLv2:0.00} s at level 2");
+
             // ----- Evasion level 2: some crashes cost no health -----
             director.autopilotMode = AutopilotMode.NoSteering;
             director.Restart();
@@ -1631,6 +1649,9 @@ namespace LastLight.EditorTools
             Check($"Traits panel: the Scout Jeep carries traits free; another vehicle pays a one-time transfer fee first", jeepCarriesFree && upgradeNeedsTransfer && transferred);
             Check("Visibility level 1 widens the gaze radius by 15%", visibilityUp && Mathf.Approximately(TraitCatalog.VisibilityScale(1), 1.15f) && Mathf.Approximately(TraitCatalog.VisibilityScale(2), 1.3f));
             Check("Traits carry over only to vehicles that paid, including later upgrades; second levels cost much more", unlinkedHasNone && rhinoWithoutFee && carriesLaterUpgrades && traitPricing);
+            Check($"Recovery trait: back up to speed {regainBase / Mathf.Max(regainLv1, 0.01f) * 100f - 100f:0}% faster at level 1, {regainBase / Mathf.Max(regainLv2, 0.01f) * 100f - 100f:0}% at level 2 ({regainBase:0.00} / {regainLv1:0.00} / {regainLv2:0.00} s)",
+                Mathf.Abs(regainBase / regainLv1 - 1.15f) < 0.06f && Mathf.Abs(regainBase / regainLv2 - 1.35f) < 0.07f
+                && TraitCatalog.Count == 4 && TraitCatalog.Cost(Trait.Recovery, 2) > TraitCatalog.Cost(Trait.Recovery, 1));
             Check($"Evasion level 2 shrugs off some crashes ({evaded} evaded, {damaged} damaged)", evasionMaxed && evaded > 0 && damaged > 0 && Mathf.Approximately(TraitCatalog.EvasionChance(1), 0.15f) && Mathf.Approximately(TraitCatalog.EvasionChance(2), 0.4f));
             Check("Horde walkers are the rigged Tripo runner", director.Crowd.UsesModels);
             {

@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace LastLight
 {
-    public enum Trait { Visibility, Controls, Evasion }
+    public enum Trait { Visibility, Controls, Evasion, Recovery }
 
     /// <summary>
     /// Vehicle traits bought in the garage, two levels each. Levels are bought once and apply to every vehicle
@@ -12,10 +12,10 @@ namespace LastLight
     /// </summary>
     public static class TraitCatalog
     {
-        public const int Count = 3;
+        public const int Count = 4;
         public const int MaxLevel = 2;
 
-        public static readonly Trait[] All = { Trait.Visibility, Trait.Controls, Trait.Evasion };
+        public static readonly Trait[] All = { Trait.Visibility, Trait.Controls, Trait.Evasion, Trait.Recovery };
 
         /// <summary>Price of reaching <paramref name="level"/> (1 or 2). The second Controls and Evasion levels cost much more.</summary>
         public static int Cost(Trait t, int level) => (t, level) switch
@@ -25,7 +25,9 @@ namespace LastLight
             (Trait.Controls, 1) => 400,
             (Trait.Controls, _) => 1600,
             (Trait.Evasion, 1) => 550,
-            _ => 2200
+            (Trait.Evasion, _) => 2200,
+            (Trait.Recovery, 1) => 500,
+            _ => 1300
         };
 
         /// <summary>One-time fee for a vehicle to carry the traits. The Scout Jeep carries them for free.</summary>
@@ -43,6 +45,9 @@ namespace LastLight
         /// <summary>How much of the snow's slipperiness is cancelled: 15% at level 1, 50% at level 2.</summary>
         public static float ControlsStability(int level) => level >= 2 ? 0.5f : level == 1 ? 0.15f : 0f;
 
+        /// <summary>How much faster the jeep gets back up to speed after a crash or an acid hit: 15%, then 35%.</summary>
+        public static float RecoveryBoost(int level) => level >= 2 ? 0.35f : level == 1 ? 0.15f : 0f;
+
         /// <summary>Chance a crash into an obstacle without a shield or shovel costs no health: 15%, then 40%.</summary>
         public static float EvasionChance(int level) => level >= 2 ? 0.4f : level == 1 ? 0.15f : 0f;
 
@@ -51,6 +56,7 @@ namespace LastLight
             Trait.Visibility => "VISIBILITY",
             Trait.Controls => "CONTROLS",
             Trait.Evasion => "EVASION",
+            Trait.Recovery => "RECOVERY",
             _ => ""
         };
 
@@ -61,14 +67,17 @@ namespace LastLight
             (Trait.Controls, 1) => "LV1  15% STEADIER ON SNOW",
             (Trait.Controls, _) => "LV2  50% STEADIER ON SNOW",
             (Trait.Evasion, 1) => "LV1  15% CHANCE: NO CRASH DAMAGE",
-            _ => "LV2  40% CHANCE: NO CRASH DAMAGE"
+            (Trait.Evasion, _) => "LV2  40% CHANCE: NO CRASH DAMAGE",
+            (Trait.Recovery, 1) => "LV1  15% FASTER BACK TO SPEED",
+            _ => "LV2  35% FASTER BACK TO SPEED"
         };
 
         public static Color Tint(Trait t) => t switch
         {
             Trait.Visibility => new Color(1f, 0.72f, 0.3f, 1f),
             Trait.Controls => Palette.IceBlue,
-            _ => Palette.RepairGreen
+            Trait.Evasion => Palette.RepairGreen,
+            _ => Palette.BoostOrange
         };
     }
 
@@ -80,9 +89,9 @@ namespace LastLight
     public sealed class TraitsPanel
     {
         public static readonly Vector3 PanelPosition = new Vector3(-2.5f, 16.5f, 15f);
-        public const float PanelWidth = 17f, PanelHeight = 8.4f;
-        const float ColumnSpacing = 5.5f;
-        static readonly Vector2 UpgradeSize = new Vector2(4.8f, 1.25f);
+        public const float PanelWidth = 22f, PanelHeight = 8.4f;
+        const float ColumnSpacing = 5.3f;
+        static readonly Vector2 UpgradeSize = new Vector2(4.7f, 1.25f);
         static readonly Vector2 TransferSize = new Vector2(9.5f, 1.15f);
 
         public readonly Transform root;
@@ -127,7 +136,7 @@ namespace LastLight
             for (int i = 0; i < TraitCatalog.Count; i++)
             {
                 Trait t = TraitCatalog.All[i];
-                float x = (i - 1) * ColumnSpacing;
+                float x = (i - (TraitCatalog.Count - 1) * 0.5f) * ColumnSpacing;
                 new Label(root, "Name " + t, TraitCatalog.Name(t), 0.5f, TextAnchor.MiddleCenter, TraitCatalog.Tint(t), new Vector2(x, top - 2.0f), 22);
                 for (int l = 0; l < TraitCatalog.MaxLevel; l++)
                 {
