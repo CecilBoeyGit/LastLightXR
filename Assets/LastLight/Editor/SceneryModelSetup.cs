@@ -18,11 +18,12 @@ namespace LastLight.EditorTools
             "Assets/LastLight/Art/Tripo/garage/",
             "Assets/LastLight/Art/Tripo/hauler_pickup/",
             "Assets/LastLight/Art/Tripo/rhino_apc/",
+            "Assets/LastLight/Art/Tripo/angel_transponder/",
         };
 
         /// <summary>Models placed whole (garage, vehicles) rather than merged into road chunks.</summary>
         internal static bool IsWhole(string path) =>
-            path.Contains("/Tripo/garage/") || path.Contains("/Tripo/hauler_pickup/") || path.Contains("/Tripo/rhino_apc/");
+            path.Contains("/Tripo/garage/") || path.Contains("/Tripo/hauler_pickup/") || path.Contains("/Tripo/rhino_apc/") || path.Contains("/Tripo/angel_transponder/");
 
         static bool InScenery(string path)
         {
@@ -78,6 +79,7 @@ namespace LastLight.EditorTools
             ("garage", "LL_Garage"),       // material only from here down: placed whole, not merged into chunks
             ("hauler_pickup", "LL_HaulerPickup"),
             ("rhino_apc", "LL_RhinoAPC"),
+            ("angel_transponder", "LL_AngelTransponder"),
         };
 
         const string AssetPath = "Assets/LastLight/Resources/" + SceneryModels.ResourcePath + ".asset";

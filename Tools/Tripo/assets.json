@@ -319,6 +319,28 @@
       "notes": "Dark red six-wheel armoured truck with orange chevrons, from Cecil's vehicle sheet. Generated on studio.tripo3d.ai (web credits only; the CLI must skip it). Run record in Tools/Tripo/runs/rhino_apc/web/web.json."
     },
     {
+      "id": "angel_transponder",
+      "enabled": false,
+      "source": "web",
+      "category": "vehicle",
+      "prompt": null,
+      "input_images": { "front": "Tools/Tripo/inputs/angel_transponder/angel_transponder_reference.png" },
+      "model": "web: HD Model, H3.1 Best Quality, single image; Retopo triangle 4000 (Smart Mesh P1.0) -> 4211 tris",
+      "face_limit": 4000,
+      "texture_size": 2048,
+      "rig": false,
+      "animations": [],
+      "unity": {
+        "prefab": "LL_AngelTransponder",
+        "replaces_placeholder": "procedural ANGEL TRANSPONDER in Assets/LastLight/Scripts/VehicleCatalog.cs (not yet swapped)",
+        "max_texture_size": 1024,
+        "material": "LL_AngelTransponder.mat (LastLight/DioramaTextured, _BaseMap = Textures/LL_AngelTransponder_BaseColor.png, not clipped to the disk)",
+        "import": "Set by Assets/LastLight/Editor/SceneryModelSetup.cs: no rig, no animation, no imported materials",
+        "collider": "none (the vehicle's gameplay footprint stays in Vehicle.cs)"
+      },
+      "notes": "Cream off-road ambulance with a red stripe, heartbeat logo and roof light bar, from Cecil's vehicle sheet. Generated on studio.tripo3d.ai (web credits only; the CLI must skip it). Run record in Tools/Tripo/runs/angel_transponder/web/web.json."
+    },
+    {
       "id": "pine_a",
       "enabled": true,
       "category": "foliage",
