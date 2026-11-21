@@ -590,7 +590,7 @@ MonoBehaviour:
   baseMaterial: {fileID: 2100000, guid: da51f0982a845f544a822d00d82b9833, type: 2}
   glowMaterial: {fileID: 2100000, guid: 1d70c76838d04f143a75651b191c35d3, type: 2}
   seed: 1
-  fixedSeed: 1
+  fixedSeed: 0
   autopilot: 0
   autopilotMode: 0
   cruiseSpeed: 6

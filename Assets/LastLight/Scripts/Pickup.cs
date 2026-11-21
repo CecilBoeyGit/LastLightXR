@@ -31,11 +31,12 @@ namespace LastLight
         public const float BadgeSize = 2.8f;
         static readonly Dictionary<PickupKind, Texture2D> iconCache = new Dictionary<PickupKind, Texture2D>();
 
-        /// <summary>The comic-style badge texture for a powerup, or null where there isn't one (coins and the booster keep 3D icons).</summary>
+        /// <summary>The comic-style badge texture for a powerup, or null where there isn't one (coins keep their 3D icon).</summary>
         public static Texture2D IconTexture(PickupKind kind)
         {
             string name = kind switch
             {
+                PickupKind.Booster => "pu_boost",
                 PickupKind.Shovel => "pu_shovel",
                 PickupKind.Turret => "pu_turret",
                 PickupKind.Shield => "pu_shield",

@@ -4,6 +4,14 @@ Builds are release APKs for PICO Swan (Android, ARM64), package `com.lastlight.p
 Version history before git: 0.1.1 to 0.1.5 were built and installed but not committed, so the first
 commit holds the 0.1.6 source.
 
+## 0.1.19
+
+- Every run now builds a fresh random road: bends, splits, cliff roads, hazards, powerups, spitters and weather.
+  Until now the scene had "Fixed Seed" on (seed 1), so every run was the same road; and even with it off, each
+  launch replayed the same series. Runs now draw a random seed, seeded from the clock at start-up. The headless
+  test still pins seed 1 so its checks stay comparable.
+- New speed boost icon: the booster now has its comic badge too, beside the road, in storage and in the shop.
+
 ## 0.1.18
 
 - New trait, Recovery: after crashing into an obstacle or being hit by spitter acid, the jeep gets back up to speed

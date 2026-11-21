@@ -52,8 +52,8 @@ namespace LastLight
 
         [Header("Run")]
         public int seed = 1;
-        [Tooltip("Keep the same seed every run, for matched playtests.")]
-        public bool fixedSeed = true;
+        [Tooltip("Keep the same seed every run, for matched playtests and the headless tests. Off: every run gets a fresh random road, hazards and weather.")]
+        public bool fixedSeed = false;
         [Tooltip("Drives steering, sweeps and gaze automatically. For testing only.")]
         public bool autopilot;
         public AutopilotMode autopilotMode = AutopilotMode.Normal;
@@ -227,6 +227,10 @@ namespace LastLight
         bool tutorialFromMenu;
         bool pinchWas, pendingSelect, pendingStart, pendingHowTo, pendingGarage;
         int runSeed;
+        /// <summary>Draws each run's seed: seeded from the clock at start-up, so no two sessions replay the same roads.</summary>
+        readonly System.Random seedRng = new System.Random(unchecked((int)System.DateTime.Now.Ticks));
+        /// <summary>The seed the current run's road, hazards, powerups and weather were built from.</summary>
+        public int RunSeed => runSeed;
         Transform worldRoot;
         Effects fx;
         ShooterSystem shooterSystem;
@@ -488,7 +492,8 @@ namespace LastLight
         void PrepareRun()
         {
             runIndex++;
-            runSeed = fixedSeed ? seed : seed + runIndex * 7919;
+            // A fresh random seed per run, unless runs are pinned to one seed for testing.
+            runSeed = fixedSeed ? seed : seedRng.Next(1, int.MaxValue);
             track.Reset();
             if (!fixedSeed) track = NewTrack(runSeed);
             car.Reset();

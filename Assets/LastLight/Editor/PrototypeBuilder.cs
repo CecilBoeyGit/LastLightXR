@@ -368,6 +368,7 @@ namespace LastLight.EditorTools
             director.showMenuOnBoot = true;
             director.tutorialEachRun = true;
             director.persistProgress = false;   // never touch a player's coins or unlocks
+            director.fixedSeed = true;          // matched runs, so the checks see the same road every time
             director.Boot();
 
             string outDir = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "Logs", "LastLightPreview"));
@@ -1429,6 +1430,23 @@ namespace LastLight.EditorTools
             int evaded = evadeLog.Count(l => l.Contains("Evaded:")), damaged = evadeLog.Count(l => l.Contains("Smashed through a") && l.Contains(", health "));
             stats.AppendLine($"Evasion level 2: {evaded} crashes evaded, {damaged} took damage");
 
+            // ----- Random roads: with the fixed seed off, every run gets its own seed and a different road -----
+            director.fixedSeed = false;
+            var seeds = new System.Collections.Generic.List<int>();
+            var shapes = new System.Collections.Generic.List<string>();
+            for (int r = 0; r < 3; r++)
+            {
+                director.Restart();
+                Hold(0.2f);
+                seeds.Add(director.RunSeed);
+                // The road's bends at a few distances, and the plan of splits and cliffs, as a fingerprint of the layout.
+                shapes.Add(string.Join(",", new[] { 200f, 400f, 600f }.Select(z => director.Track.Center(z).ToString("0.0")))
+                    + "|" + string.Join(",", director.Track.forks.Select(f => f.startS.ToString("0"))));
+            }
+            director.fixedSeed = true;
+            bool roadsRandom = seeds.Distinct().Count() == 3 && shapes.Distinct().Count() == 3;
+            stats.AppendLine($"Random roads: seeds {string.Join(", ", seeds)}; layouts {string.Join(" / ", shapes)}");
+
             // Gaze sweep: a ray moves side to side and rises above the horizon, through the real ray handling.
             // The light must keep following it and stay lit, never freezing in place.
             director.autopilot = false;
@@ -1640,11 +1658,11 @@ namespace LastLight.EditorTools
             Check("A second's stare at a spitter throws a rock that knocks it down", (object)throwTarget != null && throwNotEarly && rockThrown && rockKnockedDown);
             Check($"Knocking a spitter down with a rock pays {GameDirector.RockHitCoins} coins", rockRewarded);
             {
-                var badgeKinds = new[] { PickupKind.Shovel, PickupKind.Turret, PickupKind.Shield, PickupKind.Flashlight, PickupKind.Repair };
-                bool texturesLoad = badgeKinds.All(k => Pickup.IconTexture(k) != null && Pickup.IconTexture(k).width == 512) && Pickup.IconTexture(PickupKind.Booster) == null
+                var badgeKinds = new[] { PickupKind.Booster, PickupKind.Shovel, PickupKind.Turret, PickupKind.Shield, PickupKind.Flashlight, PickupKind.Repair };
+                bool texturesLoad = badgeKinds.All(k => Pickup.IconTexture(k) != null && Pickup.IconTexture(k).width == 512) && Pickup.IconTexture(PickupKind.Booster) != null
                     && Resources.Load<Texture2D>(UISprite.ResourceFolder + "pu_wrench") != null;
                 var shopBadges = Object.FindObjectsByType<MeshRenderer>(FindObjectsInactive.Include, FindObjectsSortMode.None).Count(r => r.name == "Badge");
-                Check($"Comic badge icons for shovel, turret, shield, flashlight and repairs (booster keeps its 3D icon); {shopBadges} badge sprites in the scene", texturesLoad && shopBadges >= 5);
+                Check($"Comic badge icons for every powerup, booster included, and the repair wrench; {shopBadges} badge sprites in the scene", texturesLoad && shopBadges >= 5);
             }
             Check($"Traits panel: the Scout Jeep carries traits free; another vehicle pays a one-time transfer fee first", jeepCarriesFree && upgradeNeedsTransfer && transferred);
             Check("Visibility level 1 widens the gaze radius by 15%", visibilityUp && Mathf.Approximately(TraitCatalog.VisibilityScale(1), 1.15f) && Mathf.Approximately(TraitCatalog.VisibilityScale(2), 1.3f));
@@ -1653,6 +1671,7 @@ namespace LastLight.EditorTools
                 Mathf.Abs(regainBase / regainLv1 - 1.15f) < 0.06f && Mathf.Abs(regainBase / regainLv2 - 1.35f) < 0.07f
                 && TraitCatalog.Count == 4 && TraitCatalog.Cost(Trait.Recovery, 2) > TraitCatalog.Cost(Trait.Recovery, 1));
             Check($"Evasion level 2 shrugs off some crashes ({evaded} evaded, {damaged} damaged)", evasionMaxed && evaded > 0 && damaged > 0 && Mathf.Approximately(TraitCatalog.EvasionChance(1), 0.15f) && Mathf.Approximately(TraitCatalog.EvasionChance(2), 0.4f));
+            Check("Each run gets a fresh random seed and a different road (fixed seed off)", roadsRandom);
             Check("Horde walkers are the rigged Tripo runner", director.Crowd.UsesModels);
             {
                 var propRenderers = Object.FindObjectsByType<MeshRenderer>(FindObjectsSortMode.None);
