@@ -15,7 +15,15 @@ namespace LastLight.EditorTools
             "Assets/LastLight/Art/Tripo/pine/",
             "Assets/LastLight/Art/Tripo/boulder/",
             "Assets/LastLight/Art/Tripo/grass_tuft/",
+            "Assets/LastLight/Art/Tripo/garage/",
+            "Assets/LastLight/Art/Tripo/hauler_pickup/",
+            "Assets/LastLight/Art/Tripo/rhino_apc/",
+            "Assets/LastLight/Art/Tripo/angel_transponder/",
         };
+
+        /// <summary>Models placed whole (garage, vehicles) rather than merged into road chunks.</summary>
+        internal static bool IsWhole(string path) =>
+            path.Contains("/Tripo/garage/") || path.Contains("/Tripo/hauler_pickup/") || path.Contains("/Tripo/rhino_apc/") || path.Contains("/Tripo/angel_transponder/");
 
         static bool InScenery(string path)
         {
@@ -42,7 +50,8 @@ namespace LastLight.EditorTools
         {
             if (!InScenery(assetPath) || !assetPath.Contains("/Textures/")) return;
             var ti = (TextureImporter)assetImporter;
-            ti.maxTextureSize = 512;
+            // The garage and the vehicles are single close-up models, so they keep more texture detail than the props.
+            ti.maxTextureSize = assetPath.Contains("/Tripo/garage/") ? 2048 : IsWhole(assetPath) ? 1024 : 512;
             ti.mipmapEnabled = true;
             ti.textureCompression = TextureImporterCompression.Compressed;
             if (assetPath.EndsWith("_Normal.png")) ti.textureType = TextureImporterType.NormalMap;
@@ -67,6 +76,10 @@ namespace LastLight.EditorTools
             ("pine", "LL_Pine"),
             ("boulder", "LL_Boulder"),
             ("grass_tuft", "LL_GrassTuft"),
+            ("garage", "LL_Garage"),       // material only from here down: placed whole, not merged into chunks
+            ("hauler_pickup", "LL_HaulerPickup"),
+            ("rhino_apc", "LL_RhinoAPC"),
+            ("angel_transponder", "LL_AngelTransponder"),
         };
 
         const string AssetPath = "Assets/LastLight/Resources/" + SceneryModels.ResourcePath + ".asset";
@@ -103,9 +116,9 @@ namespace LastLight.EditorTools
                 mat.SetTexture("_BaseMap", AssetDatabase.LoadAssetAtPath<Texture2D>($"{dir}/Textures/{name}_BaseColor.png"));
                 mat.SetColor("_Tint", Color.white);
                 mat.SetFloat("_Emission", 0f);
-                mat.SetFloat("_ClipToDisk", 1f);
+                mat.SetFloat("_ClipToDisk", SceneryModelPostprocessor.IsWhole(dir + "/") ? 0f : 1f);   // the garage and vehicles also show off the road disk
                 mat.SetFloat("_Fade", 1f);
-                mat.SetFloat("_UseVertexColor", 1f);     // merged copies carry a shade in their vertex colour
+                mat.SetFloat("_UseVertexColor", SceneryModelPostprocessor.IsWhole(dir + "/") ? 0f : 1f);     // merged prop copies carry a shade in their vertex colour
                 mat.enableInstancing = true;
                 EditorUtility.SetDirty(mat);
 
@@ -118,7 +131,7 @@ namespace LastLight.EditorTools
                     if (!any) { b = r.bounds; any = true; } else b.Encapsulate(r.bounds);
                 }
                 Object.DestroyImmediate(inst);
-                var baked = Bake(AssetDatabase.LoadAssetAtPath<GameObject>(fbx), name + "_Prop", asset);
+                var baked = SceneryModelPostprocessor.IsWhole(dir + "/") ? null : Bake(AssetDatabase.LoadAssetAtPath<GameObject>(fbx), name + "_Prop", asset);
                 if (name == "LL_Pine") { asset.pineMesh = baked; asset.pineMaterial = mat; }
                 else if (name == "LL_Boulder") { asset.rockMesh = baked; asset.rockMaterial = mat; }
                 else if (name == "LL_GrassTuft") { asset.grassMesh = baked; asset.grassMaterial = mat; }
