@@ -1116,6 +1116,19 @@ namespace LastLight.EditorTools
             bool freeRespawned = director.TryRespawn() && director.Save.Coins == bankBeforeFree && director.State == RunState.Running;
             bool secondCostsBase = director.NextRespawnCost == director.respawnBaseCost;
             bool angelPricedTop = VehicleCatalog.All.All(v => v.cost <= VehicleCatalog.All[VehicleCatalog.Angel].cost);
+            // Each vehicle's Tripo model on the road, seen from just behind and from the side, to check it faces up the road.
+            bool vehiclesUseModels = true;
+            for (int v = 0; v < VehicleCatalog.Count; v++)
+            {
+                director.Car.SetModel(v, 0);
+                if (!director.Car.UsesModel) vehiclesUseModels = false;
+                director.Car.invulnerable = 0f;
+                Hold(0.1f);
+                Vector3 carW = director.Car.Root.position;
+                Render(cam, rt, carW + d.rotation * new Vector3(0.1f, 0.09f, -0.16f), carW + d.rotation * new Vector3(0f, 0.02f, 0.02f), Path.Combine(outDir, $"vehicle_{v}_behind.png"));
+                Render(cam, rt, carW + d.rotation * new Vector3(0.2f, 0.05f, 0.02f), carW + d.rotation * new Vector3(0f, 0.02f, 0.02f), Path.Combine(outDir, $"vehicle_{v}_side.png"));
+            }
+            stats.AppendLine($"Vehicle models: {string.Join(", ", Enumerable.Range(0, VehicleCatalog.Count).Select(v => $"{VehicleCatalog.All[v].name} roof {VehicleCatalog.RoofY(v):0.00} front {VehicleCatalog.FrontZ(v):0.00}"))}");
             // Back to the pickup for the rest of the tests.
             director.Save.Equip(1);
             director.Car.SetModel(1, director.Save.ColorOf(1));
@@ -1562,6 +1575,7 @@ namespace LastLight.EditorTools
                 StorageCatalog.Price(PickupKind.Shovel) == 180 && StorageCatalog.Price(PickupKind.Booster) == 120 && StorageCatalog.Price(PickupKind.Turret) == 270 && StorageCatalog.Price(PickupKind.Flashlight) == 150
                 && StorageCatalog.Items.All(i => i == PickupKind.Repair || StorageCatalog.Price(i) < StorageCatalog.Price(PickupKind.Repair)));
             Check("Rhino starts every run with a shovel fitted, outside the compartment", rhinoShovel);
+            Check("All four vehicles use their Tripo models, and the garage stage uses the Tripo garage", vehiclesUseModels && director.GarageUI.UsesGarageModel);
             Check("Angel Transponder: the most expensive vehicle, first respawn in a run free, then the usual price", angelPricedTop && angelFirstFree && freeRespawned && secondCostsBase);
             Check($"Three-way splits from the medium stage: the autopilot takes a clear branch ({threeWayTaken} taken, {threeWayClear} clear, {threeWayAllBlocked} fully barricaded)",
                 threeWayTaken >= 2 && threeWayClear >= threeWayTaken - threeWayAllBlocked);

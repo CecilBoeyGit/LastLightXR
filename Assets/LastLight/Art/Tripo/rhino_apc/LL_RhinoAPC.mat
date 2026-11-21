@@ -32,9 +32,13 @@ Material:
     - _ClipToDisk: 0
     - _Emission: 0
     - _Fade: 1
+    - _ScanMode: 0
+    - _ScanWidth: 0.3
+    - _ScanY: 0
     - _SnowCover: 1
     - _UseVertexColor: 0
     m_Colors:
+    - _ScanColor: {r: 0.34999996, g: 0.9, b: 1, a: 1}
     - _Tint: {r: 1, g: 1, b: 1, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1

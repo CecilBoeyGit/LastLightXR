@@ -56,6 +56,8 @@ namespace LastLight
         readonly Transform body;
         readonly MeshFilter bodyFilter;
         readonly MeshRenderer bodyRenderer;
+        readonly Material boxMaterial;
+        readonly MaterialPropertyBlock bodyBlock = new MaterialPropertyBlock();
         readonly GameObject shieldOrb;
         readonly MeshRenderer goo;
         readonly MaterialPropertyBlock gooBlock = new MaterialPropertyBlock();
@@ -66,8 +68,10 @@ namespace LastLight
         public Transform Body => body;
         public int Model { get; private set; }
         public int ModelColor { get; private set; }
-        public float RoofY => VehicleCatalog.All[Model].roofY;
-        public float FrontZ => VehicleCatalog.All[Model].frontZ;
+        public float RoofY => VehicleCatalog.RoofY(Model);
+        public float FrontZ => VehicleCatalog.FrontZ(Model);
+        /// <summary>True when the body shows the Tripo model rather than the box placeholder.</summary>
+        public bool UsesModel { get; private set; }
         public bool Stalled => stallTimer > 0f || trapped;
         public float Z => Diorama.CarZ + boostOffset;
         public float ScreenX => x + screenOffset;
@@ -83,6 +87,7 @@ namespace LastLight
             bodyRenderer = MeshBuilder.Spawn("Body", root, VehicleCatalog.GetMesh(0, 0), mat);
             body = bodyRenderer.transform;
             bodyFilter = bodyRenderer.GetComponent<MeshFilter>();
+            boxMaterial = mat;
 
             var mb = new MeshBuilder();
             mb.Orb(new Vector3(0f, 0.8f, 0f), 2.1f, new Color(0.25f, 0.6f, 1f, 0.28f));
@@ -106,7 +111,13 @@ namespace LastLight
         {
             Model = Mathf.Clamp(vehicle, 0, VehicleCatalog.Count - 1);
             ModelColor = color;
-            bodyFilter.sharedMesh = VehicleCatalog.GetMesh(Model, color);
+            // The Tripo model when it's baked in, painted with a tint; otherwise the box placeholder in its colour.
+            UsesModel = VehicleCatalog.TryModel(Model, out Mesh model, out Material modelMat);
+            bodyFilter.sharedMesh = UsesModel ? model : VehicleCatalog.GetMesh(Model, color);
+            bodyRenderer.sharedMaterial = UsesModel ? modelMat : boxMaterial;
+            bodyBlock.Clear();
+            if (UsesModel) bodyBlock.SetColor(VehicleCatalog.PaintProperty, VehicleCatalog.Paint(Model, color));
+            bodyRenderer.SetPropertyBlock(bodyBlock);
         }
 
         /// <summary>Puts a wrecked, trapped or fallen jeep back on its wheels for a respawn.</summary>

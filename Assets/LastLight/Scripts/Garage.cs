@@ -18,6 +18,7 @@ namespace LastLight
         const float StageScale = 0.55f;             // a mini garage, about the island's size
         public static readonly Vector3 PanelPosition = new Vector3(14.5f, 9.5f, 1.5f);
         const float StageVehicleScale = 2.1f;
+        const float TurntableY = 0.25f, TurntableZ = 0.5f, VehicleY = 0.22f;   // in garage-stage units
 
         // ----- Panel layout, in panel units -----
         public const float PanelWidth = 12.5f;
@@ -39,6 +40,7 @@ namespace LastLight
             public UISprite lockIcon, coin;
             public Transform model;
             public MeshFilter modelFilter;
+            public MeshRenderer modelRenderer;
         }
 
         public readonly Transform stageRoot, panelRoot;
@@ -49,7 +51,12 @@ namespace LastLight
         readonly Transform turntable;
         readonly MeshFilter stageVehicle, stageVehicleOld;
         readonly MeshRenderer stageRenderer, stageRendererOld, scanRing;
-        readonly Material stageMat, stageMatOld;
+        readonly Material solidMat;
+        readonly Dictionary<(int, bool), Material> stageMats = new Dictionary<(int, bool), Material>();
+        readonly MaterialPropertyBlock tintBlock = new MaterialPropertyBlock();
+        int shownColor;
+        /// <summary>True when the stage shows the Tripo garage diorama rather than the procedural one.</summary>
+        public bool UsesGarageModel { get; private set; }
         readonly StoragePanel storage;
         readonly TraitsPanel traits;
         float swapTime = SwapSeconds;
@@ -83,34 +90,41 @@ namespace LastLight
             stageRoot.localPosition = StagePosition;
             stageRoot.localRotation = Quaternion.Euler(0f, -12f, 0f);
             stageRoot.localScale = Vector3.one * StageScale;
-            MeshBuilder.Spawn("Garage", stageRoot, BuildGarageMesh(), solidMat);
-            MeshBuilder.Spawn("Garage Lights", stageRoot, BuildGarageLights(), glowMat);
+            this.solidMat = solidMat;
+            // The Tripo garage diorama when it's baked in (its own turntable sits where the vehicle stands), else the
+            // procedural garage with its light strips.
+            var models = SceneryModels.Active;
+            UsesGarageModel = models != null && models.HasGarage;
+            if (UsesGarageModel)
+            {
+                var g = MeshBuilder.Spawn("Garage", stageRoot, models.garageMesh, models.garageMaterial);
+                g.transform.localPosition = new Vector3(0f, TurntableY + VehicleY, TurntableZ);
+            }
+            else
+            {
+                MeshBuilder.Spawn("Garage", stageRoot, BuildGarageMesh(), solidMat);
+                MeshBuilder.Spawn("Garage Lights", stageRoot, BuildGarageLights(), glowMat);
+            }
 
             turntable = new GameObject("Turntable").transform;
             turntable.SetParent(stageRoot, false);
-            turntable.localPosition = new Vector3(0f, 0.25f, 0.5f);
+            turntable.localPosition = new Vector3(0f, TurntableY, TurntableZ);
             var mb = new MeshBuilder();
             mb.Cylinder(Vector3.zero, 4.4f, 0.22f, 32, Palette.Metal * 0.8f);
             mb.Ring(new Vector3(0f, 0.23f, 0f), 3.9f, 4.2f, 32, Palette.UIAmber * 0.9f);
-            MeshBuilder.Spawn("Turntable Plate", turntable, mb.ToMesh("LL_Turntable"), solidMat);
-            // Two display slots, each with its own material copy for the scan-line swap.
-            stageMat = new Material(solidMat) { name = "LL_GarageVehicle" };
-            stageMatOld = new Material(solidMat) { name = "LL_GarageVehicleOld" };
-            stageRenderer = MeshBuilder.Spawn("Display Vehicle", turntable, VehicleCatalog.GetMesh(0, 0), stageMat);
-            stageRenderer.transform.localPosition = new Vector3(0f, 0.22f, 0f);
+            // The Tripo garage has its own turntable; the plate only shows on the procedural one.
+            if (!UsesGarageModel) MeshBuilder.Spawn("Turntable Plate", turntable, mb.ToMesh("LL_Turntable"), solidMat);
+            // Two display slots; each vehicle gets its own material copy per slot for the scan-line swap.
+            stageRenderer = MeshBuilder.Spawn("Display Vehicle", turntable, VehicleCatalog.GetMesh(0, 0), solidMat);
+            stageRenderer.transform.localPosition = new Vector3(0f, VehicleY, 0f);
             stageRenderer.transform.localScale = Vector3.one * StageVehicleScale;
             stageVehicle = stageRenderer.GetComponent<MeshFilter>();
-            stageRendererOld = MeshBuilder.Spawn("Display Vehicle (Outgoing)", turntable, VehicleCatalog.GetMesh(0, 0), stageMatOld);
-            stageRendererOld.transform.localPosition = new Vector3(0f, 0.22f, 0f);
+            stageRendererOld = MeshBuilder.Spawn("Display Vehicle (Outgoing)", turntable, VehicleCatalog.GetMesh(0, 0), solidMat);
+            stageRendererOld.transform.localPosition = new Vector3(0f, VehicleY, 0f);
             stageRendererOld.transform.localScale = Vector3.one * StageVehicleScale;
             stageVehicleOld = stageRendererOld.GetComponent<MeshFilter>();
             stageRendererOld.gameObject.SetActive(false);
-            foreach (var m in new[] { stageMat, stageMatOld })
-            {
-                m.SetColor(ScanColorId, new Color(0.35f, 0.9f, 1f, 1f));
-                m.SetFloat(ScanWidth, 0.35f);
-                m.SetFloat(ScanMode, 0f);
-            }
+            ShowVehicle(stageRenderer, stageVehicle, 0, 0, false);
             var scanMb = new MeshBuilder();
             scanMb.Ring(Vector3.zero, 3.7f, 4.25f, 40, new Color(0.35f, 0.9f, 1f, 0.9f));
             scanMb.SoftDisc(Vector3.zero, 3.7f, 40, new Color(0.35f, 0.9f, 1f, 0.12f), new Color(0.35f, 0.9f, 1f, 0.02f));
@@ -151,6 +165,7 @@ namespace LastLight
                 c.lockIcon = new UISprite("Lock", c.root, UISprite.Load("lock"), new Vector2(0.75f, 0.75f), alphaMat, 4) { Position = new Vector2(-1.0f, -0.45f) };
                 c.coin = new UISprite("Coin", c.root, UISprite.Load("coin"), new Vector2(0.6f, 0.6f), alphaMat, 4) { Position = new Vector2(1.55f, -0.45f) };
                 var model = MeshBuilder.Spawn("Model", c.root, VehicleCatalog.GetMesh(i, 0), solidMat);
+                c.modelRenderer = model;
                 c.model = model.transform;
                 c.model.localPosition = new Vector3(-3.6f, -0.75f, -1.3f);
                 c.model.localScale = Vector3.one * ModelScale;
@@ -365,7 +380,8 @@ namespace LastLight
 
             // Turntable vehicle. Picking another vehicle starts a two-second scan-line swap.
             StartSwapIfNeeded();
-            stageVehicle.sharedMesh = VehicleCatalog.GetMesh(Preview, shownColor);
+            ShowVehicle(stageRenderer, stageVehicle, Preview, shownColor, false);
+            this.shownColor = shownColor;
             UpdateSwap();
             turntable.localRotation = Quaternion.Euler(0f, time * 28f + 150f, 0f);
             lockedSign.gameObject.SetActive(!owned);
@@ -395,7 +411,7 @@ namespace LastLight
                 c.model.localRotation = Quaternion.Euler(-18f, time * 40f + i * 90f, 0f);
 
                 bool unlocked = progress.IsUnlocked(i);
-                c.modelFilter.sharedMesh = VehicleCatalog.GetMesh(i, unlocked ? (i == Preview ? previewColor : progress.ColorOf(i)) : 0);
+                ShowCardModel(c, i, unlocked ? (i == Preview ? previewColor : progress.ColorOf(i)) : 0);
                 c.lockIcon.Visible = !unlocked;
                 c.coin.Visible = !unlocked;
                 if (!unlocked)
@@ -465,10 +481,11 @@ namespace LastLight
         void StartSwapIfNeeded()
         {
             if (shownVehicle == Preview || shownVehicle < 0) { shownVehicle = Preview; return; }
-            stageVehicleOld.sharedMesh = stageVehicle.sharedMesh;
+            ShowVehicle(stageRendererOld, stageVehicleOld, shownVehicle, shownColor, true);
             shownVehicle = Preview;
             swapTime = 0f;
-            stageVehicle.sharedMesh = VehicleCatalog.GetMesh(Preview, progress.IsUnlocked(Preview) ? previewColor : 0);
+            shownColor = progress.IsUnlocked(Preview) ? previewColor : 0;
+            ShowVehicle(stageRenderer, stageVehicle, Preview, shownColor, false);
             UpdateSwap();
         }
 
@@ -480,7 +497,7 @@ namespace LastLight
             if (scanRing.gameObject.activeSelf != swapping) scanRing.gameObject.SetActive(swapping);
             if (!swapping)
             {
-                stageMat.SetFloat(ScanMode, 0f);
+                stageRenderer.sharedMaterial.SetFloat(ScanMode, 0f);
                 return;
             }
             float ringY = 0f;
@@ -489,22 +506,57 @@ namespace LastLight
                 Bounds ob = stageVehicleOld.sharedMesh.bounds;
                 float k = Mathf.SmoothStep(0f, 1f, swapTime / DissolveEnd);
                 float y = Mathf.Lerp(ob.min.y - 0.4f, ob.max.y + 0.4f, k);
-                stageMatOld.SetFloat(ScanMode, -1f);        // keep what's above the line
-                stageMatOld.SetFloat(ScanY, y);
+                stageRendererOld.sharedMaterial.SetFloat(ScanMode, -1f);        // keep what's above the line
+                stageRendererOld.sharedMaterial.SetFloat(ScanY, y);
                 ringY = y;
             }
             Bounds nb = stageVehicle.sharedMesh.bounds;
             float b = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(BuildStart, SwapSeconds, swapTime));
             float ny = Mathf.Lerp(nb.min.y - 0.4f, nb.max.y + 0.4f, b);
-            stageMat.SetFloat(ScanMode, 1f);                // keep what's below the line
-            stageMat.SetFloat(ScanY, ny);
+            stageRenderer.sharedMaterial.SetFloat(ScanMode, 1f);                // keep what's below the line
+            stageRenderer.sharedMaterial.SetFloat(ScanY, ny);
             if (!outgoing) ringY = ny;
-            scanRing.transform.localPosition = new Vector3(0f, 0.22f + ringY * StageVehicleScale, 0f);
+            scanRing.transform.localPosition = new Vector3(0f, VehicleY + ringY * StageVehicleScale, 0f);
             float fade = Mathf.Min(1f, swapTime / 0.15f, (SwapSeconds - swapTime) / 0.2f);
             scanRing.transform.localScale = Vector3.one * (1f + 0.04f * Mathf.Sin(time * 20f));
             var block = new MaterialPropertyBlock();
             block.SetColor("_Tint", new Color(1f, 1f, 1f, Mathf.Clamp01(fade)));
             scanRing.SetPropertyBlock(block);
+        }
+
+        /// <summary>
+        /// Puts a vehicle on a turntable slot: its Tripo model with the paint as a tint when it's baked in, else the box
+        /// model in its colour. Each vehicle has its own material copy per slot, so the scan line can run on both at once.
+        /// </summary>
+        void ShowVehicle(MeshRenderer r, MeshFilter f, int vehicle, int color, bool outgoing)
+        {
+            bool model = VehicleCatalog.TryModel(vehicle, out Mesh mesh, out Material mat);
+            f.sharedMesh = model ? mesh : VehicleCatalog.GetMesh(vehicle, color);
+            r.sharedMaterial = StageMaterial(model ? vehicle : -1, outgoing, model ? mat : solidMat);
+            tintBlock.Clear();
+            if (model) tintBlock.SetColor(VehicleCatalog.PaintProperty, VehicleCatalog.Paint(vehicle, color));
+            r.SetPropertyBlock(tintBlock);
+        }
+
+        Material StageMaterial(int vehicle, bool outgoing, Material source)
+        {
+            if (stageMats.TryGetValue((vehicle, outgoing), out var m) && m != null) return m;
+            m = new Material(source) { name = $"LL_GarageVehicle_{vehicle}{(outgoing ? "_Out" : "")}" };
+            m.SetColor(ScanColorId, new Color(0.35f, 0.9f, 1f, 1f));
+            m.SetFloat(ScanWidth, 0.35f);
+            m.SetFloat(ScanMode, 0f);
+            stageMats[(vehicle, outgoing)] = m;
+            return m;
+        }
+
+        void ShowCardModel(Card c, int vehicle, int color)
+        {
+            bool model = VehicleCatalog.TryModel(vehicle, out Mesh mesh, out Material mat);
+            c.modelFilter.sharedMesh = model ? mesh : VehicleCatalog.GetMesh(vehicle, color);
+            c.modelRenderer.sharedMaterial = model ? mat : solidMat;
+            tintBlock.Clear();
+            if (model) tintBlock.SetColor(VehicleCatalog.PaintProperty, VehicleCatalog.Paint(vehicle, color));
+            c.modelRenderer.SetPropertyBlock(tintBlock);
         }
 
         string actionArt;

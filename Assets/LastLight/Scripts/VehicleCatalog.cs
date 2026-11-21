@@ -81,6 +81,47 @@ namespace LastLight
 
         public static int Count => All.Length;
 
+        /// <summary>The Tripo model for a vehicle (mesh and textured material), when the baked models are present.</summary>
+        public static bool TryModel(int vehicle, out Mesh mesh, out Material material)
+        {
+            mesh = null; material = null;
+            var models = SceneryModels.Active;
+            if (models == null || !models.HasVehicle(vehicle)) return false;
+            mesh = models.vehicleMeshes[vehicle];
+            material = models.vehicleMaterials[vehicle];
+            return true;
+        }
+
+        /// <summary>Where the roof turret mounts: the top of the Tripo model when there is one, else the box model's roof.</summary>
+        public static float RoofY(int vehicle)
+        {
+            vehicle = Mathf.Clamp(vehicle, 0, All.Length - 1);
+            return TryModel(vehicle, out Mesh m, out _) ? m.bounds.max.y - 0.05f : All[vehicle].roofY;
+        }
+
+        /// <summary>Where the shovel mounts: the front bumper of the Tripo model when there is one, else the box model's.</summary>
+        public static float FrontZ(int vehicle)
+        {
+            vehicle = Mathf.Clamp(vehicle, 0, All.Length - 1);
+            return TryModel(vehicle, out Mesh m, out _) ? m.bounds.max.z : All[vehicle].frontZ;
+        }
+
+        /// <summary>
+        /// The paint job for a textured model, for the shader's _Paint (rgb colour, a amount). The first colour is the
+        /// model's own paint, left alone; the others repaint the texture's light and shade in the swatch colour.
+        /// </summary>
+        public static Color Paint(int vehicle, int color)
+        {
+            vehicle = Mathf.Clamp(vehicle, 0, All.Length - 1);
+            var def = All[vehicle];
+            color = Mathf.Clamp(color, 0, def.colors.Length - 1);
+            if (color == 0) return new Color(1f, 1f, 1f, 0f);
+            Color c = def.colors[color];
+            return new Color(c.r, c.g, c.b, 0.85f);
+        }
+
+        public const string PaintProperty = "_Paint";
+
         static readonly Dictionary<long, Mesh> cache = new Dictionary<long, Mesh>();
 
         /// <summary>The body mesh for a vehicle in one of its colours. Meshes are cached and shared.</summary>

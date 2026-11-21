@@ -4,6 +4,19 @@ Builds are release APKs for PICO Swan (Android, ARM64), package `com.lastlight.p
 Version history before git: 0.1.1 to 0.1.5 were built and installed but not committed, so the first
 commit holds the 0.1.6 source.
 
+## 0.1.15
+
+- Tripo models: the Scout Jeep, Hauler Pickup, Rhino APC and Angel Transponder are now their Tripo models in runs,
+  on the garage turntable and on the garage cards, in place of the box placeholders. Each is fitted to the old
+  footprint, facing up the road, with the turret on its roof and the shovel on its front bumper. The garage is now
+  the Tripo diorama (a floating octagonal workshop with its own turntable), open side toward you.
+- Paint: each vehicle's first colour is its own Tripo paint; the others repaint the model's light and shade in the
+  swatch colour. The garage's scan-line swap works on the textured models too.
+- The project moved out of iCloud Drive to ~/Developer/LastLightXR, which also fixed the APK doubling in size from
+  iCloud's duplicate files (0.1.14 is now 68 MB, down from 185 MB).
+- Builds refuse to run if PICO hand tracking, eye tracking or passthrough has been switched off in the project
+  settings, and check the APK still asks for hand and eye tracking.
+
 ## 0.1.14
 
 - Powerup icons: the shovel, turret, shield, flashlight and repairs powerups now show the new comic-style badges

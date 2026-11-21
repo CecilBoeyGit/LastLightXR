@@ -14,6 +14,11 @@ Shader "LastLight/DioramaTextured"
         _Fade ("Fade (1 solid, 0 gone)", Float) = 1
         _UseVertexColor ("Multiply Vertex Colour (0/1)", Float) = 0
         _SnowCover ("Snow Settles On This (0/1)", Range(0, 1)) = 1
+        _Paint ("Paint (rgb colour, a amount: repaints the texture's brightness)", Color) = (1,1,1,0)
+        _ScanY ("Scan Height (object Y)", Float) = 0
+        _ScanMode ("Scan (0 off, 1 keep below the line, -1 keep above)", Float) = 0
+        _ScanColor ("Scan Edge Colour", Color) = (0.35, 0.9, 1, 1)
+        _ScanWidth ("Scan Edge Width (object units)", Float) = 0.3
     }
     SubShader
     {
@@ -41,6 +46,11 @@ Shader "LastLight/DioramaTextured"
                 half _Fade;
                 half _UseVertexColor;
                 half _SnowCover;
+                half4 _Paint;
+                float _ScanY;
+                half _ScanMode;
+                half4 _ScanColor;
+                float _ScanWidth;
             CBUFFER_END
 
             // Globals set by Diorama.cs every frame (same as LastLight/Diorama).
@@ -71,6 +81,7 @@ Shader "LastLight/DioramaTextured"
                 float3 positionWS : TEXCOORD0;
                 float3 normalWS   : TEXCOORD1;
                 float2 uv         : TEXCOORD2;
+                float  objY       : TEXCOORD3;
                 half4  color      : COLOR;
                 UNITY_VERTEX_OUTPUT_STEREO
             };
@@ -85,6 +96,7 @@ Shader "LastLight/DioramaTextured"
                 o.normalWS = TransformObjectToWorldNormal(v.normalOS);
                 o.uv = TRANSFORM_TEX(v.uv, _BaseMap);
                 o.color = v.color;
+                o.objY = v.positionOS.y;
                 return o;
             }
 
@@ -100,9 +112,29 @@ Shader "LastLight/DioramaTextured"
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(i);
                 if (_Fade < 0.999 && Bayer4(floor(i.positionCS.xy)) >= _Fade) discard;
 
+                // Garage swap: the same ragged scan line as LastLight/Diorama eats the old vehicle away and builds the new one.
+                half scanGlow = 0;
+                half scanStripes = 0;
+                if (abs(_ScanMode) > 0.5)
+                {
+                    float d = (i.objY - _ScanY) * _ScanMode;
+                    d += (Bayer4(floor(i.positionCS.xy * 0.5)) - 0.5) * _ScanWidth * 0.5;
+                    if (d > 0) discard;
+                    scanGlow = saturate(1.0 + d / max(_ScanWidth, 1e-3));
+                    scanGlow *= scanGlow;
+                    scanStripes = step(0.8, frac(i.objY * 9.0 + _Time.y * 2.0)) * 0.35;
+                }
+
                 half3 tex = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, i.uv).rgb;
                 half3 vcol = lerp(half3(1, 1, 1), i.color.rgb, _UseVertexColor);
                 half3 albedo = tex * vcol * _Tint.rgb;
+                // Vehicle paint jobs: keep the texture's light and shade but recolour it.
+                if (_Paint.a > 0.001)
+                {
+                    // Brightness as the eye sees it (square root of linear), so a mid-tone body maps to the paint's own tone.
+                    half lum = sqrt(max(dot(albedo, half3(0.3, 0.59, 0.11)), 0.0));
+                    albedo = lerp(albedo, saturate(_Paint.rgb * lum * 2.0), _Paint.a);
+                }
 
                 float2 toDisk = i.positionWS.xz - _LL_Disk.xz;
                 float diskDist = length(toDisk);
@@ -169,6 +201,7 @@ Shader "LastLight/DioramaTextured"
                     float depth = saturate((_LL_Disk.y - i.positionWS.y) / (_LL_Disk.w * 0.35));
                     col *= (1.0 - depth) * (1.0 - depth);
                 }
+                col += _ScanColor.rgb * (scanGlow * 3.0 + scanStripes);
                 return half4(col, 1);
             }
             ENDHLSL

@@ -19,6 +19,18 @@ namespace LastLight
         public Mesh grassMesh;
         public Material grassMaterial;
 
+        /// <summary>The Tripo vehicles, in VehicleCatalog order (jeep, pickup, APC, ambulance), baked facing +Z within the
+        /// jeep's 1.4 x 2.6 footprint with the wheels on y = 0. A missing entry falls back to the box model.</summary>
+        public Mesh[] vehicleMeshes = new Mesh[4];
+        public Material[] vehicleMaterials = new Material[4];
+        /// <summary>The Tripo garage diorama, baked with its turntable centred on the origin and the turntable's top at y = 0.</summary>
+        public Mesh garageMesh;
+        public Material garageMaterial;
+
+        public bool HasVehicle(int i) => vehicleMeshes != null && vehicleMaterials != null && i >= 0 && i < vehicleMeshes.Length && i < vehicleMaterials.Length
+            && vehicleMeshes[i] != null && vehicleMaterials[i] != null;
+        public bool HasGarage => garageMesh != null && garageMaterial != null;
+
         public bool HasPine => pineMesh != null && pineMaterial != null;
         public bool HasRock => rockMesh != null && rockMaterial != null;
         public bool HasGrass => grassMesh != null && grassMaterial != null;
