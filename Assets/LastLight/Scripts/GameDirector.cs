@@ -122,7 +122,7 @@ namespace LastLight
         public RunState State { get; private set; }
         public float Distance { get; private set; }
         public float Gap { get; private set; }
-        public float Best { get; private set; }
+        public float Best => progress.BestDistance;
         public int Coins { get; private set; }
         public float BoostTime => boostTimer;
         public float FlashlightTime => flashTimer;
@@ -242,7 +242,6 @@ namespace LastLight
         GameOverChoice pendingChoice;
         bool pendingBack;
 
-        const string BestKey = "LastLight.BestDistance";
 
         void Start()
         {
@@ -374,7 +373,6 @@ namespace LastLight
 
             BuildHud();
             BuildPanels();
-            Best = PlayerPrefs.GetFloat(BestKey, 0f);
             PrepareRun();
             if (showMenuOnBoot && !autopilot) OpenMenu();
             else BeginRun();
@@ -1266,12 +1264,7 @@ namespace LastLight
             gameOverTime = 0f;
             car.acid = 0f;
             progress.Save();
-            if (Distance > Best)
-            {
-                Best = Distance;
-                PlayerPrefs.SetFloat(BestKey, Best);
-                PlayerPrefs.Save();
-            }
+            progress.RecordDistance(Distance);
             sound?.Play(sound.gameOver);
             Log($"Run over: {reason}. Distance {Distance:0} m, coins {Coins}");
         }

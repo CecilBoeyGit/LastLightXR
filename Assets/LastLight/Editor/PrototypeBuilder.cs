@@ -630,6 +630,13 @@ namespace LastLight.EditorTools
             Press();
             bool refusedBroke = !director.Save.IsUnlocked(1);
             director.Save.AddCoins(1500);
+            // With the coins but no long enough run yet, the pickup still can't be bought.
+            LookFor(garage.ActionWorldCenter, 0.4f);
+            Press();
+            bool refusedDistance = !director.Save.IsUnlocked(1) && director.Save.Coins == 1500
+                && director.EventLog.Any(l => l.Contains("needs a best run of 800 m"));
+            Render(cam, rt, headWorld, garage.panelRoot.position, Path.Combine(outDir, "view_garage_distance_locked.png"));
+            director.Save.RecordDistance(VehicleCatalog.All[1].requiredDistance);
             LookFor(garage.ActionWorldCenter, 0.4f);
             Press();
             bool unlocked = director.Save.IsUnlocked(1) && director.Save.Coins == 1500 - VehicleCatalog.All[1].cost;
@@ -666,6 +673,7 @@ namespace LastLight.EditorTools
             bool fourthSlotBought = director.Save.StorageSlots == 4;
             // Without a second vehicle the fourth slot stays shut, whatever the coins.
             var fresh = new Progress(false);
+            fresh.RecordDistance(5000f);
             fresh.AddCoins(10000);
             fresh.TryUnlockSlot(); fresh.TryUnlockSlot();
             bool fourthBarred = !fresh.TryUnlockSlot() && fresh.StorageSlots == 3 && !fresh.FourthSlotAllowed;
@@ -1102,6 +1110,7 @@ namespace LastLight.EditorTools
 
             // ----- Vehicles: the Rhino starts with a shovel, the Angel Transponder's first respawn in a run is free -----
             director.Save.AddCoins(VehicleCatalog.All[VehicleCatalog.Rhino].cost + VehicleCatalog.All[VehicleCatalog.Angel].cost);
+            director.Save.RecordDistance(VehicleCatalog.All[VehicleCatalog.Angel].requiredDistance);
             director.Save.TryUnlock(VehicleCatalog.Rhino);
             director.Save.Equip(VehicleCatalog.Rhino);
             director.Car.SetModel(VehicleCatalog.Rhino, 0);
@@ -1492,6 +1501,20 @@ namespace LastLight.EditorTools
             Check("Shovel breaks after 5 hits", !shovelBroke || shovelSmashes == Shovel.MaxHits);
             Check("Garage button focuses and opens the garage in place of the island", garageFocused && garageOpened);
             Check("Locked vehicle can't be bought without coins", previewLocked && refusedBroke);
+            {
+                var p = new Progress(false);
+                p.AddCoins(10000);
+                bool gated = !p.TryUnlock(VehicleCatalog.Hauler);
+                p.RecordDistance(799f); gated &= !p.TryUnlock(VehicleCatalog.Hauler);
+                p.RecordDistance(800f); bool hauler = p.TryUnlock(VehicleCatalog.Hauler);
+                bool rhinoGated = !p.TryUnlock(VehicleCatalog.Rhino);
+                p.RecordDistance(1500f); bool rhino = p.TryUnlock(VehicleCatalog.Rhino);
+                bool angelGated = !p.TryUnlock(VehicleCatalog.Angel);
+                p.RecordDistance(3000f); bool angel = p.TryUnlock(VehicleCatalog.Angel);
+                bool shorterRunKeepsBest = !p.RecordDistance(100f) && Mathf.Approximately(p.BestDistance, 3000f);
+                Check($"Vehicles also need a best run: Hauler {VehicleCatalog.All[1].requiredDistance:0} m, Rhino {VehicleCatalog.All[2].requiredDistance:0} m, Angel {VehicleCatalog.All[3].requiredDistance:0} m; the garage refuses with coins but no distance",
+                    gated && hauler && rhinoGated && rhino && angelGated && angel && shorterRunKeepsBest && refusedDistance);
+            }
             Check("Unlocking spends coins, then the vehicle can be driven and painted", unlocked && equipped && painted);
             Check("Garage list scrolls to the third vehicle", scrolled);
             Check("Back returns to the menu and the run uses the chosen vehicle and colour", garageClosed && runUsesVehicle);

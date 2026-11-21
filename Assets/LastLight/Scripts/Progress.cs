@@ -18,11 +18,14 @@ namespace LastLight
         const string SlotItemKey = "LastLight.StorageItem.";
         const string TraitKey = "LastLight.Trait.";
         const string LinkKey = "LastLight.TraitsLinked.";
+        const string BestKey = "LastLight.BestDistance";
         public const int Empty = -1;
 
         public readonly bool persist;
         public int Coins { get; private set; }
         public int Vehicle { get; private set; }
+        /// <summary>The furthest run so far, in metres. Vehicles need a minimum before they can be bought.</summary>
+        public float BestDistance { get; private set; }
 
         readonly bool[] unlocked = new bool[VehicleCatalog.Count];
         readonly int[] colors = new int[VehicleCatalog.Count];
@@ -40,6 +43,7 @@ namespace LastLight
             linked[0] = true;   // the Scout Jeep carries the traits for free
             if (!persist) return;
             Coins = PlayerPrefs.GetInt(CoinsKey, 0);
+            BestDistance = PlayerPrefs.GetFloat(BestKey, 0f);
             for (int i = 1; i < unlocked.Length; i++) unlocked[i] = PlayerPrefs.GetInt(UnlockKey + i, 0) == 1;
             for (int i = 0; i < colors.Length; i++) colors[i] = PlayerPrefs.GetInt(ColorKey + i, 0);
             Vehicle = Mathf.Clamp(PlayerPrefs.GetInt(VehicleKey, 0), 0, VehicleCatalog.Count - 1);
@@ -162,9 +166,27 @@ namespace LastLight
             return true;
         }
 
+        /// <summary>Records a finished run's distance. Returns true if it's a new best.</summary>
+        public bool RecordDistance(float distance)
+        {
+            if (distance <= BestDistance) return false;
+            BestDistance = distance;
+            if (persist)
+            {
+                PlayerPrefs.SetFloat(BestKey, BestDistance);
+                PlayerPrefs.Save();
+            }
+            return true;
+        }
+
+        /// <summary>True once the best run is long enough to buy this vehicle.</summary>
+        public bool DistanceMet(int vehicle) => vehicle >= 0 && vehicle < VehicleCatalog.Count && BestDistance >= VehicleCatalog.All[vehicle].requiredDistance;
+
+        /// <summary>Buys a vehicle: needs a long enough best run first, then the coins.</summary>
         public bool TryUnlock(int vehicle)
         {
             if (IsUnlocked(vehicle)) return true;
+            if (!DistanceMet(vehicle)) return false;
             if (!Spend(VehicleCatalog.All[vehicle].cost)) return false;
             unlocked[vehicle] = true;
             Save();

@@ -4,6 +4,12 @@ Builds are release APKs for PICO Swan (Android, ARM64), package `com.lastlight.p
 Version history before git: 0.1.1 to 0.1.5 were built and installed but not committed, so the first
 commit holds the 0.1.6 source.
 
+## 0.1.17
+
+- Vehicles now also need a long enough best run before they can be bought: Hauler Pickup 800 m, Rhino APC 1,500 m,
+  Angel Transponder 3,000 m. Until then the garage card shows "REACH 800 M" (and so on) instead of the price, the
+  Unlock button shows the target and stays off, and the blurb shows your best run. Your existing best carries over.
+
 ## 0.1.16
 
 - Storage: while you look at a stored item, a radial countdown fill sweeps clockwise across it, in the item's colour.

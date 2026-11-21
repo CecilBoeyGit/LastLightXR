@@ -350,6 +350,12 @@ namespace LastLight
             var def = VehicleCatalog.All[Preview];
             if (!progress.IsUnlocked(Preview))
             {
+                if (!progress.DistanceMet(Preview))
+                {
+                    refused = true;
+                    log?.Invoke($"Garage: {def.name} needs a best run of {def.requiredDistance:0} m first (best {progress.BestDistance:0} m)");
+                    return GarageAction.Changed;
+                }
                 if (progress.TryUnlock(Preview))
                 {
                     purchased = true;
@@ -414,7 +420,16 @@ namespace LastLight
                 ShowCardModel(c, i, unlocked ? (i == Preview ? previewColor : progress.ColorOf(i)) : 0);
                 c.lockIcon.Visible = !unlocked;
                 c.coin.Visible = !unlocked;
-                if (!unlocked)
+                if (!unlocked && !progress.DistanceMet(i))
+                {
+                    // Not for sale yet: show the distance still to beat instead of the price.
+                    c.coin.Visible = false;
+                    c.status.Text = $"REACH {VehicleCatalog.All[i].requiredDistance:0} M";
+                    c.status.Position = new Vector2(-0.6f, -0.45f);
+                    c.status.Color = Palette.Danger;
+                    c.name.Color = new Color(0.75f, 0.72f, 0.64f);
+                }
+                else if (!unlocked)
                 {
                     c.status.Text = VehicleCatalog.All[i].cost.ToString("N0");
                     c.status.Position = new Vector2(1.95f, -0.45f);
@@ -454,7 +469,18 @@ namespace LastLight
             perk.Text = def.perk;
 
             // Action button: Unlock (with price), Drive This, or Equipped.
-            if (!owned)
+            if (!owned && !progress.DistanceMet(Preview))
+            {
+                // Locked by distance: the button shows the target and stays off until a run gets there.
+                SetActionArt("btn_unlock");
+                actionCoin.Visible = false;
+                actionCost.Visible = true;
+                actionCost.Text = $"{def.requiredDistance:0} M";
+                actionCost.Color = Palette.Danger;
+                action.Enabled = false;
+                blurb.Text = $"Reach {def.requiredDistance:0} m in a run to unlock. Best: {progress.BestDistance:0} m";
+            }
+            else if (!owned)
             {
                 SetActionArt("btn_unlock");
                 actionCoin.Visible = true;

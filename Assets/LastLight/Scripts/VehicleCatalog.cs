@@ -9,6 +9,8 @@ namespace LastLight
         public string name;
         public string blurb;
         public int cost;
+        /// <summary>Best-run distance in metres needed before the vehicle can be bought.</summary>
+        public float requiredDistance;
         public string[] colorNames;
         public Color[] colors;
         public float roofY;         // where the turret mounts
@@ -45,6 +47,7 @@ namespace LastLight
                 blurb = "Long bed, big grille.",
                 perk = "PERK: 4TH STORAGE SLOT",
                 cost = 400,
+                requiredDistance = 800f,
                 colorNames = new[] { "Steel Blue", "Forest", "Charcoal", "Sunset" },
                 colors = new[] { Hex("#3f6f9a"), Hex("#2f5a3a"), Hex("#3a3c40"), Hex("#e0702e") },
                 roofY = 1.42f,
@@ -57,6 +60,7 @@ namespace LastLight
                 blurb = "Armoured plates, slit windows.",
                 perk = "PERK: SHOVEL FITTED EVERY RUN, 4TH SLOT",
                 cost = 1000,
+                requiredDistance = 1500f,
                 colorNames = new[] { "Gunmetal", "Desert", "Night", "Hazard" },
                 colors = new[] { Hex("#5a6068"), Hex("#b89a62"), Hex("#22252a"), Hex("#e8c02e") },
                 roofY = 1.55f,
@@ -69,6 +73,7 @@ namespace LastLight
                 blurb = "Emergency medical van.",
                 perk = "PERK: 1 FREE RESPAWN PER RUN, 4TH SLOT",
                 cost = 2500,
+                requiredDistance = 3000f,
                 colorNames = new[] { "Rescue White", "Signal Red", "Hi-Vis Lime", "Night Navy" },
                 colors = new[] { Hex("#e9e6df"), Hex("#c8372d"), Hex("#c9e23a"), Hex("#25324a") },
                 roofY = 1.72f,
