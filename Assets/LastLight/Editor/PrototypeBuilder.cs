@@ -541,6 +541,7 @@ namespace LastLight.EditorTools
                         if (director.Track.OnCliffStretch(director.Distance + 2f)) Shot(cliffWidths.Count > 3 ? "cliff_narrow" : "cliff");
                     }
                     if (mode == AutopilotMode.NoSteering && director.Car.scraping) Shot("scraping");
+                    if (mode == AutopilotMode.NoSteering && director.Car.scraping && director.Car.speed > 3f && director.Fx.ActiveCount > 12) Close("scraping_sparks");
                     TrackNewFeatures();
                     if (mode == AutopilotMode.TakeDeadEnds && director.Car.trapped) Shot("trapped");
                     if (director.Car.falling && t > 0f) fallFrames++;
@@ -769,7 +770,9 @@ namespace LastLight.EditorTools
 
             Phase("Normal driving", AutopilotMode.Normal, 150f, null);
             int normalEnd = director.EventLog.Count;
+            int sparksBefore = director.ScrapeSparks;
             Phase("No steering", AutopilotMode.NoSteering, 45f, null);
+            int scrapeSparks = director.ScrapeSparks - sparksBefore;
             int noSteerEnd = director.EventLog.Count;
             Phase("Into dead ends", AutopilotMode.TakeDeadEnds, 240f, () => director.EventLog.Skip(noSteerEnd).Any(l => l.Contains("Run over: Trapped")));
             int trappedEnd = director.EventLog.Count;
@@ -810,6 +813,7 @@ namespace LastLight.EditorTools
             Run(TurretGun.Duration + 0.6f);
             bool turretExpired = !director.Turret.Active;
             int turretShots = director.Turret.ShotsFired, turretKills = director.Turret.Kills;
+            int turretRewards = director.EventLog.Count(l => l.Contains("Turret kill reward: +20 coins"));
 
             // Acid: stop dodging and let the shooters hit the jeep.
             director.autopilotMode = AutopilotMode.NoSteering;
@@ -1035,6 +1039,7 @@ namespace LastLight.EditorTools
             }
             int storeStart = director.EventLog.Count;
             LookAtRack(0, 0.6f);
+            bool countdownShown = director.Rack.FillVisible(0);
             bool notUsedEarly = director.Save.SlotItem(0) == PickupKind.Shovel && !director.FrontShovel.Active;
             Render(cam, rt, headWorld, director.Rack.root.position, Path.Combine(outDir, "view_storage_rack_dwell.png"));
             LookAtRack(0, 0.55f);
@@ -1260,7 +1265,7 @@ namespace LastLight.EditorTools
             director.Restart();
             int lateStart = director.EventLog.Count;
             float lateT = 0f, firstNaturalWeatherAt = -1f, guaranteedFlashlightS = -1f;
-            while (lateT < 300f && director.Distance < 1400f && director.State == RunState.Running)
+            while (lateT < 320f && director.Distance < 1550f && director.State == RunState.Running)
             {
                 director.Car.invulnerable = 1e6f;
                 director.Tick(dt);
@@ -1276,6 +1281,8 @@ namespace LastLight.EditorTools
                 if (director.Track.ForkAt(director.Distance + 6f) is Fork tf && tf.ThreeWay && director.Track.BranchesSeparated(director.Distance + 6f)) Shot(tf.BlockedCount == 3 ? "three_way_all_blocked" : "three_way");
                 if (director.Track.TwinAt(director.Distance + 4f) != null && director.Track.OnCliffStretch(director.Distance + 4f)) Shot("twin_cliff");
                 if (director.Weather.Kind == WeatherKind.Snow && director.Weather.SnowCover > 0.8f) Shot("snow_natural");
+                if (director.Track.ForkAt(director.Distance + director.Car.boostOffset) is Fork gf && gf.HalfBlocked(director.Car.branch)
+                    && director.Track.hazards.Any(h => h != null && h.alive && h.kind == HazardKind.Barricade && Mathf.Abs(h.DioramaLocal.z - director.Car.Z) < 3f)) { Close("three_way_gap"); Shot("three_way_gap"); }
                 if (director.Weather.Kind == WeatherKind.Storm && director.Track.hazards.Any(h => h != null && h.alive && h.Blown && Diorama.InsideDisk(h.DioramaLocal))) Shot("storm_branch");
             }
             var lateLog = director.EventLog.Skip(lateStart).ToList();
@@ -1284,6 +1291,8 @@ namespace LastLight.EditorTools
             int threeWayTaken = lateLog.Count(l => l.Contains("branch of a three-way split"));
             int threeWayClear = lateLog.Count(l => l.Contains("branch of a three-way split: clear branch"));
             int threeWayAllBlocked = director.Track.ThreeWaySplits[3];
+            int threeWayGapTaken = lateLog.Count(l => l.Contains("half-barricaded branch with a narrow gap"));
+            int lateBarricadeHits = lateLog.Count(l => l.Contains("a barricade"));
             int twinCrossings = 0;
             {
                 bool onTwin = false;
@@ -1455,6 +1464,7 @@ namespace LastLight.EditorTools
             Check("Clear branch of an obstacle split taken", count("clear branch") > 0);
             Check("Split road rejoined", count("Split road rejoined") > 0);
             Check("Curves push an unsteered jeep into the edge", log.Skip(normalEnd).Take(noSteerEnd - normalEnd).Any(l => l.Contains("Scraping")));
+            Check($"Scraping a road edge throws sparks ({scrapeSparks} bursts)", scrapeSparks > 0);
             Check("Dead-end branch taken", count("split: dead end") > 0);
             Check("Dead-end wall traps the jeep", count("Hit the dead-end wall: trapped") > 0);
             Check("Trapped run ends", count("Run over: Trapped") > 0);
@@ -1476,6 +1486,7 @@ namespace LastLight.EditorTools
             Check($"Shooters spit acid at the jeep ({count("Shooter spat acid")} shots)", count("Shooter spat acid") > 0);
             Check($"Acid slows the jeep hard ({acidSpeed * 10f:0} km/h)", acidSlowed && acidSpeed < acidCruise * director.acidSpeedCap + 0.01f);
             Check($"Turret appears, fires and kills shooters for 10 s ({turretShots} rounds, {turretKills} kills)", turretUp && turretShots > 0 && turretKills > 0 && turretExpired);
+            Check($"Each turret kill pays {GameDirector.SpitterKillCoins} coins ({turretRewards} rewards)", turretKills > 0 && turretRewards >= turretKills);
             Check($"No turret powerups before the medium stage ({earlyTurrets})", earlyTurrets == 0);
             Check($"Shovel smashes obstacles without slowing ({shovelSmashes} smashes)", shovelSmashes > 0 && shovelNoSlowdown);
             Check("Shovel breaks after 5 hits", !shovelBroke || shovelSmashes == Shovel.MaxHits);
@@ -1512,7 +1523,7 @@ namespace LastLight.EditorTools
             Check("Storage starts with one free slot; slots unlock in order for coins", oneFreeSlot && outOfOrderRefused && slotsUnlocked);
             Check("A 4th storage slot can only be bought once a second vehicle is owned", fourthBarred && fourthAfterVehicle && fourthSlotBought);
             Check("Items bought in the garage fill empty slots; a full compartment refuses", itemsStored && fullRefused);
-            Check("A 1 s look at a stored item uses it; empty slots ignore the gaze", notUsedEarly && shovelUsed && emptySlotIgnored);
+            Check("A 1 s look at a stored item uses it, with a radial countdown fill; empty slots ignore the gaze", notUsedEarly && countdownShown && shovelUsed && emptySlotIgnored);
             Check("Different powerups stack; the same one replaces the equipped one", stacked && boostReplaced);
             Check("Fog smothers the scout light; the weather dial shows fog", fogBlocks);
             Check("A flashlight cuts through the fog", flashlightCutsFog);
@@ -1577,9 +1588,9 @@ namespace LastLight.EditorTools
             Check("Rhino starts every run with a shovel fitted, outside the compartment", rhinoShovel);
             Check("All four vehicles use their Tripo models, and the garage stage uses the Tripo garage", vehiclesUseModels && director.GarageUI.UsesGarageModel);
             Check("Angel Transponder: the most expensive vehicle, first respawn in a run free, then the usual price", angelPricedTop && angelFirstFree && freeRespawned && secondCostsBase);
-            Check($"Three-way splits from the medium stage: the autopilot takes a clear branch ({threeWayTaken} taken, {threeWayClear} clear, {threeWayAllBlocked} fully barricaded)",
-                threeWayTaken >= 2 && threeWayClear >= threeWayTaken - threeWayAllBlocked);
-            Check("Three-way splits start with 2 of 3 clear, then 1 of 3, then all 3 barricaded", ThreeWayProgression());
+            Check($"Three-way splits from the medium stage: the autopilot takes a clear branch or the narrow gap without hitting a barricade ({threeWayTaken} taken, {threeWayClear} clear, {threeWayGapTaken} through a gap, {lateBarricadeHits} hits)",
+                threeWayTaken >= 2 && threeWayClear + threeWayGapTaken >= threeWayTaken && lateBarricadeHits == 0);
+            Check("Three-way splits start with 2 of 3 clear, then 1 of 3; when all 3 are barricaded one has a narrow gap", ThreeWayProgression());
             Check("The shovel smashes through a split road's dead-end wall without stopping", shovelBreaksWall);
             Check($"Twin cliff roads from {TrackGenerator.TwinCliffsFrom:0} m: the first is safe both ways, later ones have a dead end ({twinsPlanned} planned, {twinDeadPlanned} with a dead end)", twinsPlanned >= 2 && firstTwinSafe && twinDeadPlanned >= 1);
             Check("Twin cliff road shape: two strips, one narrower, a ridge across, and the dead strip ends in a drop", stripsSplit && oneNarrower && ridgeBridges && deadStripDrops && safeRespawn);
@@ -1648,19 +1659,22 @@ namespace LastLight.EditorTools
             var root = new GameObject("Three-way Odds").transform;
             var mat = new Material(Shader.Find("LastLight/Diorama"));
             var plan = new System.Collections.Generic.List<Vector2>();
+            int halfGaps = 0, allBlocked = 0;
             for (int seed = 1; seed <= 6; seed++)
             {
                 var t = new TrackGenerator(root, mat, mat, seed);
                 for (float dist = 0f; dist < 1800f; dist += 6f) t.Scroll(dist, 0f, Mathf.FloorToInt(dist / 120f), 20f);
                 plan.AddRange(t.ThreeWayPlan);
+                halfGaps += t.ThreeWayHalfGaps;
+                allBlocked += t.ThreeWaySplits[3];
                 t.Reset();
             }
             Object.DestroyImmediate(root.gameObject);
             bool none = plan.All(p => p.x >= TrackGenerator.ThreeWayFrom);
             bool earlyOne = plan.Where(p => p.x < TrackGenerator.TwoBlockedFrom).All(p => p.y == 1) && plan.Any(p => p.x < TrackGenerator.TwoBlockedFrom);
             bool midTwo = plan.Any(p => p.x >= TrackGenerator.TwoBlockedFrom && p.y == 2) && plan.Where(p => p.x < TrackGenerator.AllBlockedFrom).All(p => p.y <= 2);
-            bool lateThree = plan.Any(p => p.x >= TrackGenerator.AllBlockedFrom && p.y == 3);
-            Debug.Log($"[LastLight] Three-way splits over 6 seeds: {plan.Count}; {string.Join(", ", plan.Select(p => $"{p.x:0} m/{p.y:0}"))}");
+            bool lateThree = plan.Any(p => p.x >= TrackGenerator.AllBlockedFrom && p.y == 3) && halfGaps == allBlocked;
+            Debug.Log($"[LastLight] Three-way splits over 6 seeds: {plan.Count}, {allBlocked} fully barricaded with {halfGaps} narrow gaps; {string.Join(", ", plan.Select(p => $"{p.x:0} m/{p.y:0}"))}");
             return none && earlyOne && midTwo && lateThree;
         }
 

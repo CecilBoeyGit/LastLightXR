@@ -43,6 +43,9 @@ namespace LastLight
         public float maxOffset = 7.5f;      // how far the outer branches open from the centreline
         public float branchHalf = 3f;       // half width of each branch once open
         public bool wallBroken;     // a shovel smashed the dead-end wall
+        public int halfIndex = -1;  // three-way, all blocked: this branch (left, middle, right) only has half a barricade
+        public int halfK;           // which side of that branch the half barricade stands on (-1 or +1); the gap is the other side
+        public bool HalfBlocked(int side) => ThreeWay && side != 0 && halfIndex == Index(side);
         public bool ThreeWay => ways == 3;
         public static int Index(int side) => side == Middle ? 1 : side < 0 ? 0 : 2;
         public bool Blocked(int side) => ThreeWay && side != 0 && blocked[Index(side)];
@@ -115,7 +118,7 @@ namespace LastLight
         /// <summary>And from here on often all three.</summary>
         public const float AllBlockedFrom = 1000f;
         const float ThreeWayOffset = 8.6f, ThreeWayHalf = 2.5f;
-        const float BarricadeHalfWidth = 1.32f;
+        public const float BarricadeHalfWidth = 1.32f;
         static readonly int GuaranteedFlashlightChunk = Mathf.CeilToInt(450f / ChunkLength);
         public const float MediumStageFrom = 300f;
         public const float LateStageFrom = 700f;
@@ -148,6 +151,8 @@ namespace LastLight
         public readonly int[] ThreeWaySplits = new int[4];
         /// <summary>Distance where each three-way split starts, with how many branches it blocks. For tests.</summary>
         public readonly List<Vector2> ThreeWayPlan = new List<Vector2>();
+        /// <summary>Fully barricaded three-way splits that got a half barricade (a narrow gap). For tests.</summary>
+        public int ThreeWayHalfGaps { get; private set; }
         /// <summary>Twin cliff roads planned so far, and how many had a dead end. For tests.</summary>
         public int TwinCliffs { get; private set; }
         public int TwinDeadEnds { get; private set; }
@@ -597,6 +602,7 @@ namespace LastLight
             GuaranteedFlashlightS = -1f;
             System.Array.Clear(ThreeWaySplits, 0, ThreeWaySplits.Length);
             ThreeWayPlan.Clear();
+            ThreeWayHalfGaps = 0;
             TwinCliffs = TwinDeadEnds = 0;
             nextIndex = 0;
             lastType = ChunkType.Quiet;
@@ -759,6 +765,14 @@ namespace LastLight
             var order = new List<int> { 0, 1, 2 };
             for (int i = 0; i < order.Count; i++) { int j = rng.Next(i, order.Count); (order[i], order[j]) = (order[j], order[i]); }
             for (int i = 0; i < count; i++) f.blocked[order[i]] = true;
+            if (count == 3)
+            {
+                // All three shut would leave no way through without a shovel or shield: one gets only half a barricade,
+                // leaving a narrow gap the jeep can squeeze through.
+                f.halfIndex = order[rng.Next(3)];
+                f.halfK = rng.NextDouble() < 0.5 ? -1 : 1;
+                ThreeWayHalfGaps++;
+            }
             ThreeWaySplits[count]++;
             ThreeWayPlan.Add(new Vector2(f.startS, count));
         }
@@ -1109,6 +1123,7 @@ namespace LastLight
                         float bx = Fork.BranchX(side, b);
                         for (int k = -1; k <= 1; k += 2)
                         {
+                            if (f.HalfBlocked(side) && k != f.halfK) continue;   // the narrow gap
                             var h = SpawnHazard(c, HazardKind.Barricade, barricadeMesh);
                             h.halfWidth = BarricadeHalfWidth;
                             h.transform.localPosition = new Vector3(Center(rowS) + bx + k * (w - BarricadeHalfWidth), 0f, z);

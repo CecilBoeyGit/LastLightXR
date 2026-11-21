@@ -5,12 +5,12 @@ namespace LastLight
 {
     /// <summary>
     /// Manual gaze attack on spitters. Stare at a spitter you can see (on the disk, or lit by the scout light or
-    /// flashlight) for a second, and the jeep hurls a rock at it at high speed that knocks it down.
+    /// flashlight) for 0.7 seconds, and the jeep hurls a rock at it at high speed that knocks it down.
     /// A ring fills round the spitter while you stare. Positions are disk-local.
     /// </summary>
     public sealed class RockThrower
     {
-        public const float StareSeconds = 1f;
+        public const float StareSeconds = 0.7f;
         const float StareRadius = 1.9f;         // game units around the spitter's body that count as looking
         const float LoseGrace = 0.2f;
         const float RockSpeed = 42f;            // game units per second

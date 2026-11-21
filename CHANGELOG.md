@@ -4,6 +4,16 @@ Builds are release APKs for PICO Swan (Android, ARM64), package `com.lastlight.p
 Version history before git: 0.1.1 to 0.1.5 were built and installed but not committed, so the first
 commit holds the 0.1.6 source.
 
+## 0.1.16
+
+- Storage: while you look at a stored item, a radial countdown fill sweeps clockwise across it, in the item's colour.
+- Three-way splits: when all three branches are barricaded, one of them now has only half a barricade, leaving a
+  narrow gap the jeep can squeeze through without damage.
+- Turret kills on spitters pay 20 coins, like rock hits, with the same gold "+20".
+- New turret icon.
+- Scraping a road edge throws orange sparks off that side of the jeep.
+- Rock throws: the stare at a spitter is now 0.7 s (was 1 s).
+
 ## 0.1.15
 
 - Tripo models: the Scout Jeep, Hauler Pickup, Rhino APC and Angel Transponder are now their Tripo models in runs,

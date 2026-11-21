@@ -87,8 +87,11 @@ namespace LastLight
         [Header("Coins")]
         /// <summary>Cost of the first paid respawn in a run. The next costs 2x that, the one after 3x the last, and so on.</summary>
         [System.NonSerialized] public int respawnBaseCost = 100;
-        /// <summary>Coins for knocking a spitter down with a thrown rock.</summary>
-        public const int RockHitCoins = 20;
+        /// <summary>Coins for killing a spitter, with a thrown rock or the turret.</summary>
+        public const int SpitterKillCoins = 20;
+        public const int RockHitCoins = SpitterKillCoins;
+        /// <summary>Spark bursts thrown while scraping a road edge since boot (across runs). For tests.</summary>
+        public int ScrapeSparks { get; private set; }
         [Tooltip("Save the coin bank, unlocks and garage choices between sessions. Tests turn this off.")]
         public bool persistProgress = true;
 
@@ -206,7 +209,7 @@ namespace LastLight
         int runIndex;
         string endReason = "";
         float reacquire, recenterDelay = 0.6f, autopilotRetry;
-        float boostTimer, flashTimer, scrapeSoundTimer;
+        float boostTimer, flashTimer, scrapeSoundTimer, sparkTimer;
         bool wasScraping;
         bool onDeadBranch;
         bool autoEscaping;
@@ -360,11 +363,7 @@ namespace LastLight
             thrower.OnHit = z =>
             {
                 KillShooter(z, "A thrown rock knocked down");
-                Coins += RockHitCoins;
-                progress.AddCoins(RockHitCoins);
-                sound?.Play(sound.coin);
-                thrower.Popup(z.CenterDioramaLocal + Vector3.up * 1.6f, $"+{RockHitCoins}", HeadLocal);
-                Log($"Rock hit reward: +{RockHitCoins} coins, bank {progress.Coins}");
+                RewardSpitterKill(z, "Rock hit");
             };
             trails = new SnowTrails(worldRoot, terrainMaterial);
 
@@ -616,7 +615,7 @@ namespace LastLight
             {
                 bool onCliff = track.OnCliffStretch(carS);
                 car.Steer(dt, slope, onCliff ? curveDrift * CliffDriftFraction : curveDrift, min, max);
-                UpdateScrape(dt);
+                UpdateScrape(dt, car.x > (min + max) * 0.5f ? 1f : -1f);
                 if (onCliff && track.OverAbyss(car.x, carS)) FallIntoAbyss();
                 else if (wasOnCliff && !onCliff) Log("Crossed a cliff road");
                 wasOnCliff = onCliff;
@@ -896,7 +895,21 @@ namespace LastLight
             if (killed != null) KillShooter(killed);
         }
 
-        void KillShooter(ShooterZombie z) => KillShooter(z, "Turret killed");
+        void KillShooter(ShooterZombie z)
+        {
+            KillShooter(z, "Turret killed");
+            RewardSpitterKill(z, "Turret kill");
+        }
+
+        /// <summary>Pays for a dead spitter, with a gold "+20" rising over it.</summary>
+        void RewardSpitterKill(ShooterZombie z, string how)
+        {
+            Coins += SpitterKillCoins;
+            progress.AddCoins(SpitterKillCoins);
+            sound?.Play(sound.coin);
+            if (z != null) thrower.Popup(z.CenterDioramaLocal + Vector3.up * 1.6f, $"+{SpitterKillCoins}", HeadLocal);
+            Log($"{how} reward: +{SpitterKillCoins} coins, bank {progress.Coins}");
+        }
 
         void KillShooter(ShooterZombie z, string how)
         {
@@ -987,14 +1000,25 @@ namespace LastLight
                 Fork f = track.ForkAt(carS);
                 onDeadBranch = f.deadSide == car.branch;
                 string detail = onDeadBranch ? "dead end" : f.obstacleSide == car.branch ? "obstacle branch"
+                    : f.HalfBlocked(car.branch) ? "half-barricaded branch with a narrow gap"
                     : f.Blocked(car.branch) ? "barricaded branch" : "clear branch";
                 string which = car.branch == Fork.Middle ? "middle" : car.branch < 0 ? "left" : "right";
                 Log($"Took the {which} {(f.ThreeWay ? "branch of a three-way split" : "split")}: {detail}");
             }
         }
 
-        void UpdateScrape(float dt)
+        void UpdateScrape(float dt, float side)
         {
+            // Sparks spray off the side scraping the edge, every few hundredths of a second.
+            if (car.scraping && car.speed > 1f && (sparkTimer -= dt) <= 0f)
+            {
+                sparkTimer = 0.05f;
+                ScrapeSparks++;
+                var at = new Vector3(car.ScreenX + side * (Vehicle.HalfWidth + 0.05f), 0.25f, car.Z + Random.Range(-0.9f, 0.7f));
+                Color spark = Random.value < 0.5f ? new Color(1f, 0.62f, 0.12f, 1f) * 1.3f : new Color(1f, 0.38f, 0.05f, 1f) * 1.25f;
+                spark.a = 1f;
+                fx.Splash(worldRoot, at, spark, 6, 5.5f, 0.13f, 0.28f, 1.4f);
+            }
             scrapeSoundTimer -= dt;
             if (car.scraping && scrapeSoundTimer <= 0f)
             {
@@ -1527,6 +1551,8 @@ namespace LastLight
                 }
                 TrackGenerator.Branch(fork, Mathf.Clamp(carS + 6f, fork.startS, fork.EndS - 0.01f), out float b, out float w);
                 desired = Fork.BranchX(side, Mathf.Max(b, 2f));
+                // A half-barricaded branch: aim for the narrow gap beside the barricade.
+                if (fork.HalfBlocked(side)) desired -= fork.halfK * TrackGenerator.BarricadeHalfWidth;
                 // Escape test: drive into the wall first, then steer to the gap and crawl out.
                 if (car.trapped) autoEscaping = true;
                 if (autopilotMode == AutopilotMode.EscapeDeadEnds && fork.deadSide != 0 && car.branch == fork.deadSide && autoEscaping)
@@ -1603,10 +1629,10 @@ namespace LastLight
             return i;
         }
 
-        /// <summary>A three-way split: the clear branch nearest the jeep; if all three are barricaded, the middle one.</summary>
+        /// <summary>A three-way split: the clear branch nearest the jeep; if all three are barricaded, the one with the narrow gap.</summary>
         int PickThreeWayBranch(Fork fork)
         {
-            int best = Fork.Middle;
+            int best = fork.halfIndex == 0 ? -1 : fork.halfIndex == 2 ? 1 : Fork.Middle;
             float bestCost = float.MaxValue;
             foreach (int side in new[] { -1, Fork.Middle, 1 })
             {

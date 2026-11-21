@@ -303,6 +303,8 @@ namespace LastLight
         readonly Label[] labels = new Label[StorageCatalog.MaxSlots];
         readonly MeshRenderer[] dwellRings = new MeshRenderer[StorageCatalog.MaxSlots];
         readonly Mesh[] dwellMeshes = new Mesh[StorageCatalog.MaxSlots];
+        readonly MeshRenderer[] fills = new MeshRenderer[StorageCatalog.MaxSlots];
+        readonly Mesh[] fillMeshes = new Mesh[StorageCatalog.MaxSlots];
         readonly float[] dwell = new float[StorageCatalog.MaxSlots];
         readonly float[] flash = new float[StorageCatalog.MaxSlots];
         readonly MeshBuilder mb = new MeshBuilder();
@@ -350,8 +352,16 @@ namespace LastLight
                 dwellRings[i] = MeshBuilder.Spawn("Dwell", t, dwellMeshes[i], glowMat);
                 dwellRings[i].transform.localPosition = new Vector3(0f, 0f, -0.3f);
                 dwellRings[i].gameObject.SetActive(false);
+                // A radial countdown: a wedge sweeping clockwise from 12 o'clock across the item while you look.
+                fillMeshes[i] = new Mesh { name = "LL_StorageFill_" + i };
+                fills[i] = MeshBuilder.Spawn("Countdown Fill", t, fillMeshes[i], glowMat);
+                fills[i].transform.localPosition = new Vector3(0f, 0f, -0.25f);
+                fills[i].gameObject.SetActive(false);
             }
         }
+
+        /// <summary>True while a slot's radial countdown fill is showing. For tests.</summary>
+        public bool FillVisible(int slot) => fills[slot].gameObject.activeSelf;
 
         public bool Visible
         {
@@ -436,8 +446,22 @@ namespace LastLight
 
                 bool showDwell = dwell[i] > 0.02f && item.HasValue;
                 if (dwellRings[i].gameObject.activeSelf != showDwell) dwellRings[i].gameObject.SetActive(showDwell);
+                if (fills[i].gameObject.activeSelf != showDwell) fills[i].gameObject.SetActive(showDwell);
                 if (showDwell)
                 {
+                    float k = Mathf.Clamp01(dwell[i] / StorageCatalog.UseSeconds);
+                    mb.Clear();
+                    int seg = Mathf.Max(1, Mathf.CeilToInt(48 * k));
+                    float r = SlotRadius * 0.95f;
+                    for (int s = 0; s < seg; s++)
+                    {
+                        float a0 = Mathf.PI * 0.5f - Mathf.PI * 2f * k * s / seg, a1 = Mathf.PI * 0.5f - Mathf.PI * 2f * k * (s + 1) / seg;
+                        mb.Tri(Vector3.zero, new Vector3(Mathf.Cos(a0), Mathf.Sin(a0), 0f) * r, new Vector3(Mathf.Cos(a1), Mathf.Sin(a1), 0f) * r, Color.white);
+                    }
+                    mb.ToMesh(fillMeshes[i].name, fillMeshes[i]);
+                    Color fc2 = StorageCatalog.Tint(item.Value); fc2.a = 0.45f + 0.25f * k;
+                    mpb.SetColor("_Tint", fc2);
+                    fills[i].SetPropertyBlock(mpb);
                     mb.Clear();
                     mb.Arc(Vector3.zero, SlotRadius + 0.1f, SlotRadius + 0.38f, dwell[i] / StorageCatalog.UseSeconds, 40, Color.white);
                     mb.ToMesh(dwellMeshes[i].name, dwellMeshes[i]);
