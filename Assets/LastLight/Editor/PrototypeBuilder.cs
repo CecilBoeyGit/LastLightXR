@@ -259,8 +259,64 @@ namespace LastLight.EditorTools
         [MenuItem("Last Light/Build Android APK (arm64)")]
         public static void BuildAndroidMenu() => BuildAndroid("arm64", false);
 
+        const string PicoSettingsPath = "Assets/Resources/PXR_ProjectSetting.asset";
+        /// <summary>PICO features the game can't play without: hands steer, eyes scout, passthrough is the room behind the disk.</summary>
+        static readonly string[] RequiredPicoFeatures = { "handTracking", "eyeTracking", "videoSeeThrough" };
+
+        /// <summary>
+        /// Refuses a build whose PICO settings have hand tracking, eye tracking or passthrough switched off. A fresh
+        /// Library re-import has reset these to 0 before, which would ship an APK with no hands, no gaze and no room
+        /// view. Checks the settings as loaded in the Editor, which is what the build uses.
+        /// </summary>
+        public static bool PicoFeaturesOn(out string problem)
+        {
+            problem = null;
+            var asset = AssetDatabase.LoadMainAssetAtPath(PicoSettingsPath);
+            if (asset == null) { problem = $"{PicoSettingsPath} is missing"; return false; }
+            var so = new SerializedObject(asset);
+            var off = new System.Collections.Generic.List<string>();
+            foreach (var name in RequiredPicoFeatures)
+            {
+                var prop = so.FindProperty(name);
+                if (prop == null) off.Add(name + " (not found)");
+                else if (!prop.boolValue) off.Add(name);
+            }
+            if (off.Count == 0) return true;
+            problem = $"PICO features switched off in {PicoSettingsPath}: {string.Join(", ", off)}. Restore it with: git checkout {PicoSettingsPath}";
+            return false;
+        }
+
+        /// <summary>After a build, checks the APK's manifest still asks for hand and eye tracking.</summary>
+        static bool ApkHasTrackingPermissions(string apkPath, out string problem)
+        {
+            problem = null;
+            try
+            {
+                using var zip = System.IO.Compression.ZipFile.OpenRead(apkPath);
+                var entry = zip.GetEntry("AndroidManifest.xml");
+                if (entry == null) { problem = "the APK has no AndroidManifest.xml"; return false; }
+                using var stream = entry.Open();
+                using var ms = new MemoryStream();
+                stream.CopyTo(ms);
+                // Binary XML keeps its strings as UTF-16; dropping the zero bytes leaves searchable ASCII.
+                var text = new StringBuilder();
+                foreach (byte b in ms.ToArray()) if (b != 0) text.Append((char)b);
+                string manifest = text.ToString();
+                var missing = new[] { "com.picovr.permission.HAND_TRACKING", "com.picovr.permission.EYE_TRACKING" }.Where(perm => !manifest.Contains(perm)).ToList();
+                if (missing.Count == 0) return true;
+                problem = "the APK's manifest is missing " + string.Join(", ", missing);
+                return false;
+            }
+            catch (System.Exception e) { problem = "couldn't read the APK's manifest: " + e.Message; return false; }
+        }
+
         public static bool BuildAndroid(string arch, bool release)
         {
+            if (!PicoFeaturesOn(out string picoProblem))
+            {
+                Debug.LogError("[LastLight] Android build refused: " + picoProblem);
+                return false;
+            }
             if (!File.Exists(ScenePath)) Build();
             var target = UnityEditor.Build.NamedBuildTarget.Android;
             PlayerSettings.productName = "Last Light";
@@ -291,7 +347,14 @@ namespace LastLight.EditorTools
             var report = BuildPipeline.BuildPlayer(options);
             var s = report.summary;
             Debug.Log($"[LastLight] Android build {s.result}: {s.outputPath} ({s.totalSize / (1024f * 1024f):0.0} MB, {s.totalErrors} errors, arch {arch})");
-            return s.result == UnityEditor.Build.Reporting.BuildResult.Succeeded;
+            if (s.result != UnityEditor.Build.Reporting.BuildResult.Succeeded) return false;
+            if (!ApkHasTrackingPermissions(s.outputPath, out string apkProblem))
+            {
+                Debug.LogError("[LastLight] Android build check failed, don't install this APK: " + apkProblem);
+                return false;
+            }
+            Debug.Log("[LastLight] PICO check passed: hand tracking, eye tracking and passthrough on; manifest has hand and eye tracking");
+            return true;
         }
 
         [MenuItem("Last Light/Run Headless Preview")]
