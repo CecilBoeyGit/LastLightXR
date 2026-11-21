@@ -306,6 +306,10 @@ namespace LastLight
 
             pickupMaterial = new Material(baseMaterial);
             pickupMaterial.SetFloat("_Emission", 1.1f);
+            // Powerups with a comic badge show it as a flat sprite that faces the player.
+            UISprite.LoadMaterials(out Material badgeMat, out _);
+            Pickup.IconMaterial = badgeMat;
+            Pickup.FaceTowards = HeadLocal;
             progress = new Progress(persistProgress && Application.isPlaying);
             ShooterZombie.GlowMaterial = glowMaterial;
 
@@ -346,7 +350,7 @@ namespace LastLight
             weather.OnLightning = () => Log("Lightning strike");
             weather.OnThunder = () => sound?.Play(sound.thunder, 0.8f);
 
-            qte = new RepairQte(worldRoot, glowMaterial);
+            qte = new RepairQte(worldRoot, glowMaterial, badgeMat);
             qte.OnWrenchShown = () => Log("Repair wrench shown over the jeep");
             qte.OnStarted = () => { sound?.Play(sound.gazeArm, 0.7f); Log("Repair started: look at the dots"); };
             qte.OnDotCleared = i => { sound?.Play(sound.coin, 0.8f); Log($"Repair dot {i + 1} of {RepairQte.DotCount} cleared"); };

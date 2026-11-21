@@ -39,33 +39,40 @@ namespace LastLight
         readonly Transform wrench, dot, ring;
         readonly MeshRenderer wrenchRenderer, dotRenderer, ringRenderer;
         readonly Mesh ringMesh;
+        readonly UISprite badge;
         readonly MeshBuilder mb = new MeshBuilder();
         readonly MaterialPropertyBlock mpb = new MaterialPropertyBlock();
         System.Random rng = new System.Random(1);
         Vector3 dotOffset;
         float lastAngle, lost, time, popTime;
 
-        public RepairQte(Transform parent, Material glowMat)
+        public RepairQte(Transform parent, Material glowMat, Material spriteMat = null)
         {
-            // Wrench: a handle with an open jaw at one end and a ring at the other, flat in XY.
-            Color c = Color.white;
-            mb.Box(new Vector3(0f, 0f, 0f), new Vector3(0.28f, 1.7f, 0.05f), c);
-            for (int i = 0; i < 8; i++)
+            Texture2D icon = Resources.Load<Texture2D>(UISprite.ResourceFolder + "pu_wrench");
+            if (icon == null || spriteMat == null)
             {
-                // Open jaw: an arc of blocks round the top, gap facing up.
-                float a = Mathf.Lerp(-200f, 20f, i / 7f) * Mathf.Deg2Rad;
-                var p = new Vector3(Mathf.Cos(a), Mathf.Sin(a), 0f) * 0.42f + new Vector3(0f, 1.05f, 0f);
-                mb.Box(p, new Vector3(0.2f, 0.2f, 0.05f), Quaternion.Euler(0f, 0f, a * Mathf.Rad2Deg), c);
+                // Fallback line-art wrench: a handle with an open jaw at one end and a ring at the other, flat in XY.
+                Color c = Color.white;
+                mb.Box(new Vector3(0f, 0f, 0f), new Vector3(0.28f, 1.7f, 0.05f), c);
+                for (int i = 0; i < 8; i++)
+                {
+                    float a = Mathf.Lerp(-200f, 20f, i / 7f) * Mathf.Deg2Rad;
+                    var p = new Vector3(Mathf.Cos(a), Mathf.Sin(a), 0f) * 0.42f + new Vector3(0f, 1.05f, 0f);
+                    mb.Box(p, new Vector3(0.2f, 0.2f, 0.05f), Quaternion.Euler(0f, 0f, a * Mathf.Rad2Deg), c);
+                }
+                for (int i = 0; i < 12; i++)
+                {
+                    float a = i * Mathf.PI * 2f / 12f;
+                    var p = new Vector3(Mathf.Cos(a), Mathf.Sin(a), 0f) * 0.3f + new Vector3(0f, -1.0f, 0f);
+                    mb.Box(p, new Vector3(0.16f, 0.16f, 0.05f), Quaternion.Euler(0f, 0f, a * Mathf.Rad2Deg), c);
+                }
             }
-            for (int i = 0; i < 12; i++)
-            {
-                float a = i * Mathf.PI * 2f / 12f;
-                var p = new Vector3(Mathf.Cos(a), Mathf.Sin(a), 0f) * 0.3f + new Vector3(0f, -1.0f, 0f);
-                mb.Box(p, new Vector3(0.16f, 0.16f, 0.05f), Quaternion.Euler(0f, 0f, a * Mathf.Rad2Deg), c);
-            }
+            // A soft glow behind the wrench, so it stands out over the road.
             mb.SoftDisc(Vector3.forward * 0.05f, 1.5f, 24, new Color(1f, 1f, 1f, 0.22f), new Color(1f, 1f, 1f, 0f));
             wrenchRenderer = MeshBuilder.Spawn("Repair Wrench", parent, mb.ToMesh("LL_RepairWrench"), glowMat);
             wrench = wrenchRenderer.transform;
+            // The comic wrench badge, in front of the glow.
+            if (icon != null && spriteMat != null) badge = new UISprite("Wrench Badge", wrench, icon, new Vector2(2.3f, 2.3f), spriteMat, 7);
 
             mb.Clear();
             mb.Orb(Vector3.zero, 0.5f, new Color(1f, 1f, 1f, 0.95f));
@@ -200,7 +207,7 @@ namespace LastLight
             if (wrenchUp)
             {
                 wrench.localPosition = at + Vector3.up * Mathf.Sin(time * 3f) * 0.12f;
-                wrench.localRotation = face * Quaternion.Euler(0f, 0f, 35f + Mathf.Sin(time * 2.2f) * 12f);
+                wrench.localRotation = face * Quaternion.Euler(0f, 0f, badge != null ? Mathf.Sin(time * 2.2f) * 8f : 35f + Mathf.Sin(time * 2.2f) * 12f);
                 wrench.localScale = Vector3.one * WrenchScale * pop * (1f + 0.06f * Mathf.Sin(time * 8f));
                 Color c = WrenchColor * (1.3f + 0.5f * Mathf.Abs(Mathf.Sin(time * 4f))); c.a = 1f;
                 mpb.SetColor("_Tint", c);

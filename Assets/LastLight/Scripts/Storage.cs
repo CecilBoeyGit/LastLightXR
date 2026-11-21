@@ -84,6 +84,7 @@ namespace LastLight
         readonly Progress progress;
         readonly GazeButton[] slots = new GazeButton[StorageCatalog.MaxSlots];
         readonly MeshFilter[] slotIcons = new MeshFilter[StorageCatalog.MaxSlots];
+        readonly UISprite[] slotBadges = new UISprite[StorageCatalog.MaxSlots];
         readonly UISprite[] slotLocks = new UISprite[StorageCatalog.MaxSlots];
         readonly UISprite[] slotCoins = new UISprite[StorageCatalog.MaxSlots];
         readonly Label[] slotLabels = new Label[StorageCatalog.MaxSlots];
@@ -126,6 +127,8 @@ namespace LastLight
                 icon.transform.localPosition = new Vector3(0f, 0f, -0.6f);
                 icon.transform.localScale = Vector3.one * 0.85f;
                 slotIcons[i] = icon.GetComponent<MeshFilter>();
+                slotBadges[i] = new UISprite("Badge", slots[i].root, null, SlotSize * 0.72f, alphaMat, 4);
+                slotBadges[i].Visible = false;
                 slotLocks[i] = new UISprite("Lock", slots[i].root, lockTex, new Vector2(1.1f, 1.1f), alphaMat, 5);
                 slotCoins[i] = new UISprite("Price Coin", root, coinTex, new Vector2(0.5f, 0.5f), alphaMat, 4) { Position = pos + new Vector2(-0.55f, -1.6f) };
                 slotLabels[i] = new Label(root, "Slot Label " + i, "", 0.32f, TextAnchor.MiddleCenter, ivory, pos + new Vector2(0f, -1.55f), 22);
@@ -138,10 +141,19 @@ namespace LastLight
                 PickupKind item = StorageCatalog.Items[i];
                 var pos = new Vector2(0f, FirstCardY - i * CardSpacing);
                 cards[i] = new GazeButton(root, "Item " + item, "card", pos, CardSize, alphaMat, 1);
-                var icon = MeshBuilder.Spawn("Icon", cards[i].root, Pickup.IconMesh(item), solidMat);
-                icon.transform.localPosition = new Vector3(-4.35f, 0f, -0.6f);
-                icon.transform.localScale = Vector3.one * 0.62f;
-                cardIcons[i] = icon.transform;
+                Texture2D badge = Pickup.IconTexture(item);
+                if (badge != null)
+                {
+                    var b = new UISprite("Badge", cards[i].root, badge, new Vector2(1.75f, 1.75f), alphaMat, 4) { Position = new Vector2(-4.35f, 0f) };
+                    cardIcons[i] = b.transform;
+                }
+                else
+                {
+                    var icon = MeshBuilder.Spawn("Icon", cards[i].root, Pickup.IconMesh(item), solidMat);
+                    icon.transform.localPosition = new Vector3(-4.35f, 0f, -0.6f);
+                    icon.transform.localScale = Vector3.one * 0.62f;
+                    cardIcons[i] = icon.transform;
+                }
                 new Label(cards[i].root, "Name", StorageCatalog.Name(item), 0.5f, TextAnchor.MiddleLeft, ivory, new Vector2(-3.4f, 0.32f), 22);
                 new Label(cards[i].root, "Blurb", StorageCatalog.Blurb(item), 0.25f, TextAnchor.MiddleLeft, new Color(0.8f, 0.76f, 0.66f), new Vector2(-3.4f, -0.36f), 22);
                 new UISprite("Coin", cards[i].root, coinTex, new Vector2(0.6f, 0.6f), alphaMat, 4) { Position = new Vector2(3.55f, 0.3f) };
@@ -234,8 +246,11 @@ namespace LastLight
             {
                 bool open = i < progress.StorageSlots;
                 var item = progress.SlotItem(i);
-                slotIcons[i].gameObject.SetActive(item.HasValue);
-                if (item.HasValue)
+                Texture2D badge = item.HasValue ? Pickup.IconTexture(item.Value) : null;
+                slotIcons[i].gameObject.SetActive(item.HasValue && badge == null);
+                slotBadges[i].Visible = badge != null;
+                if (badge != null) slotBadges[i].Texture = badge;
+                else if (item.HasValue)
                 {
                     slotIcons[i].sharedMesh = Pickup.IconMesh(item.Value);
                     slotIcons[i].transform.localRotation = Quaternion.Euler(0f, Mathf.Sin(time * 1.4f + i) * 25f, 0f);
@@ -260,7 +275,7 @@ namespace LastLight
                 bool afford = progress.CanAfford(StorageCatalog.Price(item));
                 cards[i].Enabled = afford && !full;
                 cardPrices[i].Color = afford ? Palette.UIIvory : Palette.Danger;
-                cardIcons[i].localRotation = Quaternion.Euler(0f, Mathf.Sin(time * 1.2f + i * 0.8f) * 25f, 0f);
+                if (Pickup.IconTexture(item) == null) cardIcons[i].localRotation = Quaternion.Euler(0f, Mathf.Sin(time * 1.2f + i * 0.8f) * 25f, 0f);
             }
         }
     }
@@ -281,6 +296,7 @@ namespace LastLight
         readonly Progress progress;
         readonly Transform[] slots = new Transform[StorageCatalog.MaxSlots];
         readonly MeshFilter[] icons = new MeshFilter[StorageCatalog.MaxSlots];
+        readonly UISprite[] badges = new UISprite[StorageCatalog.MaxSlots];
         readonly UISprite[] rings = new UISprite[StorageCatalog.MaxSlots];
         readonly UISprite[] locks = new UISprite[StorageCatalog.MaxSlots];
         readonly UISprite[] flashes = new UISprite[StorageCatalog.MaxSlots];
@@ -325,6 +341,8 @@ namespace LastLight
                 icon.transform.localPosition = new Vector3(0f, 0.12f, -0.7f);
                 icon.transform.localScale = Vector3.one * 0.55f;
                 icons[i] = icon.GetComponent<MeshFilter>();
+                badges[i] = new UISprite("Badge", t, null, Vector2.one * SlotRadius * 1.6f, alphaMat, 4) { Position = new Vector2(0f, 0.1f) };
+                badges[i].Visible = false;
                 locks[i] = new UISprite("Lock", t, lockTex, new Vector2(0.8f, 0.8f), alphaMat, 4) { Color = new Color(1f, 1f, 1f, 0.6f) };
                 flashes[i] = new UISprite("Use Flash", t, spot, Vector2.one * 3.6f, addMat, 5);
                 labels[i] = new Label(t, "Label", "", 0.24f, TextAnchor.MiddleCenter, ivory, new Vector2(0f, -SlotRadius + 0.32f), 26, true);
@@ -391,11 +409,18 @@ namespace LastLight
             {
                 bool open = i < progress.StorageSlots;
                 var item = progress.SlotItem(i);
-                icons[i].gameObject.SetActive(item.HasValue);
-                if (item.HasValue)
+                Texture2D badge = item.HasValue ? Pickup.IconTexture(item.Value) : null;
+                icons[i].gameObject.SetActive(item.HasValue && badge == null);
+                badges[i].Visible = badge != null;
+                float look = Looking == i ? 1f : 0f;
+                if (badge != null)
+                {
+                    badges[i].Texture = badge;
+                    badges[i].Size = Vector2.one * SlotRadius * (1.6f + 0.15f * look);
+                }
+                else if (item.HasValue)
                 {
                     icons[i].sharedMesh = Pickup.IconMesh(item.Value);
-                    float look = Looking == i ? 1f : 0f;
                     icons[i].transform.localRotation = Quaternion.Euler(0f, Mathf.Sin(time * 1.4f + i) * 22f, 0f);
                     icons[i].transform.localScale = Vector3.one * (0.55f + 0.08f * look);
                 }

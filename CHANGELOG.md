@@ -4,6 +4,13 @@ Builds are release APKs for PICO Swan (Android, ARM64), package `com.lastlight.p
 Version history before git: 0.1.1 to 0.1.5 were built and installed but not committed, so the first
 commit holds the 0.1.6 source.
 
+## 0.1.14
+
+- Powerup icons: the shovel, turret, shield, flashlight and repairs powerups now show the new comic-style badges
+  (round, retro American comic look) instead of the 3D shapes: floating beside the road, where the badges turn to
+  face you, in the dashboard storage slots, and in the garage shop. The speed boost has no badge yet and keeps its
+  3D chevrons. The repair QTE shows the new wrench badge over the jeep.
+
 ## 0.1.13
 
 - Three-way splits replace the three-lane main road from 0.1.12, which is gone. From the medium stage a split can

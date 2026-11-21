@@ -1510,6 +1510,13 @@ namespace LastLight.EditorTools
             Check("Switching across the ridge gets the jeep off a dead strip; riding it to the end drops into the abyss", tookDeadStrip && ridgeEscaped && deadEndDrops);
             Check("A second's stare at a spitter throws a rock that knocks it down", (object)throwTarget != null && throwNotEarly && rockThrown && rockKnockedDown);
             Check($"Knocking a spitter down with a rock pays {GameDirector.RockHitCoins} coins", rockRewarded);
+            {
+                var badgeKinds = new[] { PickupKind.Shovel, PickupKind.Turret, PickupKind.Shield, PickupKind.Flashlight, PickupKind.Repair };
+                bool texturesLoad = badgeKinds.All(k => Pickup.IconTexture(k) != null && Pickup.IconTexture(k).width == 512) && Pickup.IconTexture(PickupKind.Booster) == null
+                    && Resources.Load<Texture2D>(UISprite.ResourceFolder + "pu_wrench") != null;
+                var shopBadges = Object.FindObjectsByType<MeshRenderer>(FindObjectsInactive.Include, FindObjectsSortMode.None).Count(r => r.name == "Badge");
+                Check($"Comic badge icons for shovel, turret, shield, flashlight and repairs (booster keeps its 3D icon); {shopBadges} badge sprites in the scene", texturesLoad && shopBadges >= 5);
+            }
             Check($"Traits panel: the Scout Jeep carries traits free; another vehicle pays a one-time transfer fee first", jeepCarriesFree && upgradeNeedsTransfer && transferred);
             Check("Visibility level 1 widens the gaze radius by 15%", visibilityUp && Mathf.Approximately(TraitCatalog.VisibilityScale(1), 1.15f) && Mathf.Approximately(TraitCatalog.VisibilityScale(2), 1.3f));
             Check("Traits carry over only to vehicles that paid, including later upgrades; second levels cost much more", unlinkedHasNone && rhinoWithoutFee && carriesLaterUpgrades && traitPricing);

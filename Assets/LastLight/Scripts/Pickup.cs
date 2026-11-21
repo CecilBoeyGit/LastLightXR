@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace LastLight
@@ -20,6 +21,36 @@ namespace LastLight
         float spinPhase;
         Vector3 basePos;
         GameObject visual;
+        UISprite badge;
+
+        /// <summary>Sprite material for the flat badge icons; set by the director at boot.</summary>
+        public static Material IconMaterial;
+        /// <summary>The player's head in disk units: badges turn to face it.</summary>
+        public static Vector3 FaceTowards = new Vector3(0f, 15f, -14f);
+        /// <summary>World width of a powerup badge, in game units.</summary>
+        public const float BadgeSize = 2.8f;
+        static readonly Dictionary<PickupKind, Texture2D> iconCache = new Dictionary<PickupKind, Texture2D>();
+
+        /// <summary>The comic-style badge texture for a powerup, or null where there isn't one (coins and the booster keep 3D icons).</summary>
+        public static Texture2D IconTexture(PickupKind kind)
+        {
+            string name = kind switch
+            {
+                PickupKind.Shovel => "pu_shovel",
+                PickupKind.Turret => "pu_turret",
+                PickupKind.Shield => "pu_shield",
+                PickupKind.Flashlight => "pu_flashlight",
+                PickupKind.Repair => "pu_repair",
+                _ => null
+            };
+            if (name == null) return null;
+            if (!iconCache.TryGetValue(kind, out var tex) || tex == null)
+            {
+                tex = Resources.Load<Texture2D>(UISprite.ResourceFolder + name);
+                iconCache[kind] = tex;
+            }
+            return tex;
+        }
         static Mesh coinMesh, boosterMesh, shieldMesh, flashlightMesh, turretMesh, shovelMesh, repairMesh;
 
         /// <summary>Stare time at the start of a run.</summary>
@@ -64,10 +95,20 @@ namespace LastLight
             p.chunk = chunk;
             p.basePos = chunkLocal;
             p.spinPhase = phase;
-            var r = MeshBuilder.Spawn("Icon", go.transform, mesh, mat);
-            float scale = kind == PickupKind.Coin ? 0.8f : 1.5f;
-            r.transform.localScale = Vector3.one * scale;
-            p.visual = r.gameObject;
+            Texture2D icon = IconTexture(kind);
+            if (icon != null && IconMaterial != null)
+            {
+                // A flat comic badge that turns to face the player.
+                p.badge = new UISprite("Badge", go.transform, icon, Vector2.one * BadgeSize, IconMaterial, 6);
+                p.visual = p.badge.transform.gameObject;
+            }
+            else
+            {
+                var r = MeshBuilder.Spawn("Icon", go.transform, mesh, mat);
+                float scale = kind == PickupKind.Coin ? 0.8f : 1.5f;
+                r.transform.localScale = Vector3.one * scale;
+                p.visual = r.gameObject;
+            }
             p.visual.SetActive(false);
             return p;
         }
@@ -81,6 +122,13 @@ namespace LastLight
         {
             if (!Visible) return;
             transform.localPosition = basePos + Vector3.up * Mathf.Sin(time * 2f + spinPhase) * 0.2f;
+            if (badge != null)
+            {
+                // Badges face the player and sway a little.
+                Vector3 toward = DioramaLocal - FaceTowards;
+                transform.localRotation = Quaternion.LookRotation(toward, Vector3.up) * Quaternion.Euler(0f, 0f, Mathf.Sin(time * 1.4f + spinPhase) * 6f);
+                return;
+            }
             // Powerups rock gently so the icon stays readable; coins spin all the way round.
             float yaw = kind == PickupKind.Coin ? (time + spinPhase) * 140f : Mathf.Sin(time * 1.4f + spinPhase) * 22f;
             transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
