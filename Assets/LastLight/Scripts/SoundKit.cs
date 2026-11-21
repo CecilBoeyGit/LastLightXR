@@ -41,36 +41,54 @@ namespace LastLight
             rain.volume = 0f;
             rain.clip = Noise("rain", 2f, 0.35f, 9f, true);
 
-            // The BGM loop, rendered offline by Tools/Audio/render_bgm.py. It streams, so it costs little memory.
-            music = host.AddComponent<AudioSource>();
-            music.playOnAwake = false;
-            music.spatialBlend = 0f;
-            music.loop = true;
-            music.volume = 0f;
-            music.priority = 0;
-            music.clip = Resources.Load<AudioClip>("LastLightAudio/LL_BGM_Run");
+            // The BGM loops, rendered offline by Tools/Audio/render_bgm.py (run) and render_menu_bgm.py (menu).
+            // Both stream, so they cost little memory.
+            runMusic = MusicSource(host, "LastLightAudio/LL_BGM_Run");
+            menuMusic = MusicSource(host, "LastLightAudio/LL_BGM_Menu");
         }
 
-        const float MusicRun = 0.34f, MusicMenu = 0.24f, MusicPaused = 0.12f, MusicGameOver = 0.07f;
-        const float MusicFade = 0.6f;   // volume per second
-        readonly AudioSource music;
+        const float MusicRun = 0.34f, MusicPaused = 0.12f, MusicGameOver = 0.07f, MusicMenu = 0.3f;
+        const float MusicFade = 0.4f;   // volume per second, so a crossfade takes about a second
+        readonly AudioSource runMusic, menuMusic;
+
+        static AudioSource MusicSource(GameObject host, string clip)
+        {
+            var s = host.AddComponent<AudioSource>();
+            s.playOnAwake = false;
+            s.spatialBlend = 0f;
+            s.loop = true;
+            s.volume = 0f;
+            s.priority = 0;
+            s.clip = Resources.Load<AudioClip>(clip);
+            return s;
+        }
 
         /// <summary>
-        /// Keeps the BGM loop playing and eases its volume toward the level for the current state:
-        /// full on a run, softer in the menus and on pause, nearly gone on the run-over panel.
+        /// Crossfades between the menu loop (main menu, tutorial, garage) and the run loop, easing the run loop's
+        /// volume by state: full on a run, softer on pause, nearly gone on the run-over panel. A loop that fades
+        /// out stops, so it starts again from the top next time.
         /// </summary>
         public void TickMusic(RunState state, float dt)
         {
-            if (!Application.isPlaying || music.clip == null) return;
-            if (!music.isPlaying) music.Play();
-            float target = state switch
+            if (!Application.isPlaying) return;
+            bool menu = state == RunState.Menu || state == RunState.Tutorial || state == RunState.Garage;
+            float run = state switch
             {
                 RunState.Running => MusicRun,
                 RunState.Paused => MusicPaused,
                 RunState.GameOver => MusicGameOver,
-                _ => MusicMenu,
+                _ => 0f,
             };
-            music.volume = Mathf.MoveTowards(music.volume, target, MusicFade * dt);
+            FadeMusic(runMusic, menu ? 0f : run, dt);
+            FadeMusic(menuMusic, menu ? MusicMenu : 0f, dt);
+        }
+
+        static void FadeMusic(AudioSource s, float target, float dt)
+        {
+            if (s.clip == null) return;
+            if (target > 0f && !s.isPlaying) s.Play();
+            s.volume = Mathf.MoveTowards(s.volume, target, MusicFade * dt);
+            if (target <= 0f && s.volume <= 0f && s.isPlaying) s.Stop();
         }
 
         /// <summary>Sets the rain loop's volume, starting or stopping it as needed.</summary>
