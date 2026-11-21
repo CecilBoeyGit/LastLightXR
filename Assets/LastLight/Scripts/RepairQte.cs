@@ -16,8 +16,9 @@ namespace LastLight
         public const float WrenchSeconds = 0.5f;
         public const float DotSeconds = 0.5f;
         public const int DotCount = 3;
-        const float WrenchHeight = 2.7f;
-        const float WrenchRadius = 1.5f, DotRadius = 1.35f;     // game units around the target that count as looking
+        const float WrenchHeight = 2.3f;
+        const float WrenchScale = 0.6f;
+        const float WrenchRadius = 1.2f, DotRadius = 1.15f;     // game units around the target that count as looking
         const float LoseGrace = 0.2f;
         static readonly Color WrenchColor = new Color(0.45f, 1f, 0.6f, 1f);
         static readonly Color[] DotColors = { new Color(0.45f, 1f, 0.6f, 1f), new Color(1f, 0.85f, 0.3f, 1f), new Color(0.5f, 0.85f, 1f, 1f) };
@@ -67,8 +68,8 @@ namespace LastLight
             wrench = wrenchRenderer.transform;
 
             mb.Clear();
-            mb.Orb(Vector3.zero, 0.62f, new Color(1f, 1f, 1f, 0.95f));
-            mb.Orb(Vector3.zero, 1.15f, new Color(1f, 1f, 1f, 0.25f));
+            mb.Orb(Vector3.zero, 0.5f, new Color(1f, 1f, 1f, 0.95f));
+            mb.Orb(Vector3.zero, 0.9f, new Color(1f, 1f, 1f, 0.25f));
             dotRenderer = MeshBuilder.Spawn("Repair Dot", parent, mb.ToMesh("LL_RepairDot"), glowMat);
             dot = dotRenderer.transform;
 
@@ -180,8 +181,8 @@ namespace LastLight
                 if (DotIndex == 0 || Mathf.Abs(Mathf.DeltaAngle(angle, lastAngle)) > 70f) break;
             }
             lastAngle = angle;
-            float dist = 3.6f + (float)rng.NextDouble() * 2.6f;
-            float height = 1.2f + (float)rng.NextDouble() * 1.4f;
+            float dist = 2.2f + (float)rng.NextDouble() * 1.2f;
+            float height = 0.9f + (float)rng.NextDouble() * 0.9f;
             float a = angle * Mathf.Deg2Rad;
             dotOffset = new Vector3(Mathf.Sin(a) * dist, height, Mathf.Cos(a) * dist);
             Dwell = 0f;
@@ -200,7 +201,7 @@ namespace LastLight
             {
                 wrench.localPosition = at + Vector3.up * Mathf.Sin(time * 3f) * 0.12f;
                 wrench.localRotation = face * Quaternion.Euler(0f, 0f, 35f + Mathf.Sin(time * 2.2f) * 12f);
-                wrench.localScale = Vector3.one * pop * (1f + 0.06f * Mathf.Sin(time * 8f));
+                wrench.localScale = Vector3.one * WrenchScale * pop * (1f + 0.06f * Mathf.Sin(time * 8f));
                 Color c = WrenchColor * (1.3f + 0.5f * Mathf.Abs(Mathf.Sin(time * 4f))); c.a = 1f;
                 mpb.SetColor("_Tint", c);
                 wrenchRenderer.SetPropertyBlock(mpb);
@@ -219,7 +220,7 @@ namespace LastLight
             ring.localPosition = at;
             ring.localRotation = face;
             float seconds = wrenchUp ? WrenchSeconds : DotSeconds;
-            float r = wrenchUp ? 1.7f : 1.45f;
+            float r = wrenchUp ? 1.05f : 1.15f;
             mb.Clear();
             mb.Arc(Vector3.zero, r, r + 0.06f, 1f, 40, new Color(1f, 1f, 1f, 0.35f));
             if (Dwell > 0.01f) mb.Arc(Vector3.zero, r - 0.05f, r + 0.22f, Dwell / seconds, 40, Color.white);

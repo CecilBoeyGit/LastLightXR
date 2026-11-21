@@ -44,6 +44,37 @@ namespace LastLight
         static Mesh rockMesh, glowMesh;
         float lost, cooldown;
 
+        class Pop { public Transform t; public TextMesh text; public float age; }
+        readonly List<Pop> pops = new List<Pop>();
+        const float PopSeconds = 1.2f;
+
+        /// <summary>A floating gold label (the coin reward) that rises and fades over the knocked-down spitter.</summary>
+        public void Popup(Vector3 at, string label, Vector3 headLocal)
+        {
+            var text = UIText.Make(parent, "Reward", label, 1.1f, TextAnchor.MiddleCenter, Palette.CoinGold, 30, true);
+            text.transform.localPosition = at;
+            text.transform.localRotation = Quaternion.LookRotation(at - headLocal, Vector3.up);
+            pops.Add(new Pop { t = text.transform, text = text });
+        }
+
+        void TickPops(float dt)
+        {
+            for (int i = pops.Count - 1; i >= 0; i--)
+            {
+                var p = pops[i];
+                p.age += dt;
+                if (p.t == null || p.age >= PopSeconds)
+                {
+                    if (p.t != null) Kill(p.t.gameObject);
+                    pops.RemoveAt(i);
+                    continue;
+                }
+                p.t.localPosition += Vector3.up * 2f * dt;
+                Color c = Palette.CoinGold; c.a = 1f - Mathf.Clamp01((p.age - PopSeconds * 0.5f) / (PopSeconds * 0.5f));
+                p.text.color = c;
+            }
+        }
+
         public RockThrower(Transform parent, Material rockMat, Material glowMat)
         {
             this.parent = parent;
@@ -74,6 +105,8 @@ namespace LastLight
             cooldown = 0f;
             Thrown = 0;
             ring.gameObject.SetActive(false);
+            foreach (var p in pops) if (p.t != null) Kill(p.t.gameObject);
+            pops.Clear();
         }
 
         /// <param name="visible">Whether a disk-local point can be seen right now (on the disk or lit).</param>
@@ -112,6 +145,7 @@ namespace LastLight
                 Dwell = 0f;
             }
             TickRocks(running ? dt : 0f);
+            TickPops(dt);
             DrawRing(headLocal);
         }
 

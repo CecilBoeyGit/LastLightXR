@@ -851,12 +851,12 @@ namespace LastLight.EditorTools
             bool respawnFocused = director.GameOverUI.Focused == 1;
             Press();
             bool refusedWithoutCoins = director.State == RunState.GameOver && !director.GameOverUI.RespawnEnabled;
-            director.Save.AddCoins(300);
+            director.Save.AddCoins(400);
             Hold(0.1f);
             bool enabledWithCoins = director.GameOverUI.RespawnEnabled;
             Render(cam, rt, headT.position, director.GameOverUI.root.position, Path.Combine(outDir, "view_gameover_focus_respawn.png"));
             Press();
-            bool respawn1 = director.State == RunState.Running && director.Save.Coins == 300 - director.respawnBaseCost
+            bool respawn1 = director.State == RunState.Running && director.respawnBaseCost == 100 && director.Save.Coins == 400 - director.respawnBaseCost
                 && director.RespawnsThisRun == 1 && director.NextRespawnCost == director.respawnBaseCost * 2 && !director.Car.falling;
             Shot("respawned");
             Hold(1f);
@@ -864,12 +864,13 @@ namespace LastLight.EditorTools
             director.Scout.ScriptedWorldRay = null;
 
             bool crashed2 = CrashOut(240f);
+            director.Save.AddCoins(director.NextRespawnCost);
             int bankBefore2 = director.Save.Coins;
             Hold(PanelReady);
             LookAtPanel(1, 0.4f);
             Press();
             bool respawn2 = director.State == RunState.Running && director.Save.Coins == bankBefore2 - director.respawnBaseCost * 2
-                && director.NextRespawnCost == director.respawnBaseCost * 4;
+                && director.NextRespawnCost == director.respawnBaseCost * 6;
             director.Scout.ScriptedWorldRay = null;
 
             // Lazy follow: small head turns leave the panel alone, a big one brings it back in front.
@@ -1094,7 +1095,22 @@ namespace LastLight.EditorTools
             Render(cam, rt, headWorld, director.Gauges.root.position, Path.Combine(outDir, "view_dashboard_storm.png"));
             Hold(0.5f);
             bool branchMoves = blown != null && Mathf.Abs(blown.transform.localPosition.x - blownX0) > 1f;
-            Hold(5.5f);
+            // Branches cross the road centre on the disk, ahead of the jeep, where they can be seen.
+            int crossedAhead = 0;
+            var lastSide = new System.Collections.Generic.Dictionary<Hazard, float>();
+            for (float t = 0f; t < 5.5f; t += dt)
+            {
+                director.Tick(dt);
+                foreach (var h in director.Track.hazards)
+                {
+                    if (h == null || !h.alive || !h.Blown) continue;
+                    Vector3 hp = h.DioramaLocal;
+                    float rel = director.RoadRelativeX(hp);
+                    if (lastSide.TryGetValue(h, out float was) && Mathf.Sign(was) != Mathf.Sign(rel) && hp.z > director.Car.Z && Diorama.InsideDisk(hp)) crossedAhead++;
+                    lastSide[h] = rel;
+                    if (Diorama.InsideDisk(hp) && hp.z > director.Car.Z + 2f && Mathf.Abs(rel) < 2f) Shot("storm_branch_crossing");
+                }
+            }
             Shot("storm_wet");
             Close("storm_wet");
             int stormSkids = director.EventLog.Skip(stormStart).Count(l => l.Contains("Skidded"));
@@ -1105,7 +1121,7 @@ namespace LastLight.EditorTools
             Hold(7f);
             bool puddlesDry = !director.Track.PuddlesShown;
             // Late in a run the branches come closer together.
-            System.Func<float, float> branchGap = dist => Mathf.Lerp(3.2f, 1.3f, Mathf.Clamp01((dist - WeatherSystem.FirstFrom) / 1200f));
+            System.Func<float, float> branchGap = dist => Mathf.Lerp(1.9f, 0.9f, Mathf.Clamp01((dist - WeatherSystem.FirstFrom) / 1200f));
             bool branchesRamp = branchGap(1500f) < branchGap(600f) * 0.6f;
 
             // Snow: white cover, tyre tracks, a slippery jeep that skids; the Controls trait steadies it.
@@ -1138,7 +1154,30 @@ namespace LastLight.EditorTools
             bool snowMelted = director.Weather.SnowCover < 0.1f;
             director.autopilot = false;
 
-            // ----- Late road: three-lane barricades, twin cliff roads and natural weather, driven a long way -----
+            // ----- Shovel through a split road's dead-end wall -----
+            director.autopilot = true;
+            director.autopilotMode = AutopilotMode.TakeDeadEnds;
+            director.Restart();
+            int wallStart = director.EventLog.Count;
+            float wallT = 0f;
+            System.Func<bool> wallSmashed = () => director.EventLog.Skip(wallStart).Any(l => l.Contains("Shovel smashed a dead-end wall"));
+            while (wallT < 240f && director.State == RunState.Running && !wallSmashed())
+            {
+                director.Car.invulnerable = 1e6f;
+                if (!director.FrontShovel.Active) director.GrantPowerup(PickupKind.Shovel);
+                director.Tick(dt);
+                wallT += dt;
+            }
+            Close("shovel_wall");
+            Hold(1.5f);
+            var wallLog = director.EventLog.Skip(wallStart).ToList();
+            int smashIdx = wallLog.FindIndex(l => l.Contains("Shovel smashed a dead-end wall"));
+            // Through without being trapped, and faster than the escape track's crawl (80% of cruise).
+            bool shovelBreaksWall = smashIdx >= 0 && !wallLog.Skip(smashIdx).Any(l => l.Contains("Hit the dead-end wall: trapped")) && !director.Car.trapped
+                && director.Track.forks.Any(f => f.wallBroken) && director.Car.speed > director.CruiseSpeedNow * 0.81f;
+            stats.AppendLine($"Shovel vs dead-end wall: smashed {smashIdx >= 0} after {wallT:0} s, speed after {director.Car.speed * 10f:0} km/h");
+
+            // ----- Late road: three-way splits, twin cliff roads and natural weather, driven a long way -----
             // The jeep can't be hurt or caught here, so it gets far; falling off a cliff still ends the run.
             director.autopilot = true;
             director.autopilotMode = AutopilotMode.Normal;
@@ -1158,7 +1197,7 @@ namespace LastLight.EditorTools
                     if (!cr.twin && !cliffWidths.Contains(cr.halfWidth)) cliffWidths.Add(cr.halfWidth);
                     if (cr.twin) narrowestTwinStrip = narrowestTwinStrip <= 0f ? Mathf.Min(cr.leftHalf, cr.rightHalf) : Mathf.Min(narrowestTwinStrip, Mathf.Min(cr.leftHalf, cr.rightHalf));
                 }
-                if (director.Track.hazards.Any(h => h != null && h.alive && h.kind == HazardKind.Barricade && h.DioramaLocal.z > director.Car.Z + 4f && h.DioramaLocal.z < 12f)) Shot("lanes");
+                if (director.Track.ForkAt(director.Distance + 6f) is Fork tf && tf.ThreeWay && director.Track.BranchesSeparated(director.Distance + 6f)) Shot(tf.BlockedCount == 3 ? "three_way_all_blocked" : "three_way");
                 if (director.Track.TwinAt(director.Distance + 4f) != null && director.Track.OnCliffStretch(director.Distance + 4f)) Shot("twin_cliff");
                 if (director.Weather.Kind == WeatherKind.Snow && director.Weather.SnowCover > 0.8f) Shot("snow_natural");
                 if (director.Weather.Kind == WeatherKind.Storm && director.Track.hazards.Any(h => h != null && h.alive && h.Blown && Diorama.InsideDisk(h.DioramaLocal))) Shot("storm_branch");
@@ -1166,8 +1205,9 @@ namespace LastLight.EditorTools
             var lateLog = director.EventLog.Skip(lateStart).ToList();
             float lateDistance = director.Distance;
             bool lateSurvived = director.State == RunState.Running;
-            int[] laneRows = (int[])director.Track.LaneRows.Clone();
-            int barricadeHits = lateLog.Count(l => l.Contains("a barricade"));
+            int threeWayTaken = lateLog.Count(l => l.Contains("branch of a three-way split"));
+            int threeWayClear = lateLog.Count(l => l.Contains("branch of a three-way split: clear branch"));
+            int threeWayAllBlocked = director.Track.ThreeWaySplits[3];
             int twinCrossings = 0;
             {
                 bool onTwin = false;
@@ -1179,7 +1219,7 @@ namespace LastLight.EditorTools
             }
             int twinsPlanned = director.Track.TwinCliffs, twinDeadPlanned = director.Track.TwinDeadEnds;
             bool firstTwinSafe = lateLog.FirstOrDefault(l => l.Contains("Twin cliff road planned"))?.Contains("both strips safe") ?? false;
-            stats.AppendLine($"Late road: {lateT:0} s, {lateDistance:0} m, survived {lateSurvived}; barricade rows 1/2/3 lanes {laneRows[1]}/{laneRows[2]}/{laneRows[3]}, hits {barricadeHits}; twin cliffs {twinsPlanned} ({twinDeadPlanned} with a dead end), crossed {twinCrossings}; first weather at {firstNaturalWeatherAt:0} m");
+            stats.AppendLine($"Late road: {lateT:0} s, {lateDistance:0} m, survived {lateSurvived}; three-way splits taken {threeWayTaken} ({threeWayClear} clear), planned with 1/2/3 blocked {director.Track.ThreeWaySplits[1]}/{director.Track.ThreeWaySplits[2]}/{director.Track.ThreeWaySplits[3]}; twin cliffs {twinsPlanned} ({twinDeadPlanned} with a dead end), crossed {twinCrossings}; first weather at {firstNaturalWeatherAt:0} m");
 
             // Ridge escape: take the dead strip on purpose, then switch across on the ridge. And riding it to the end drops.
             director.autopilotMode = AutopilotMode.TwinRidgeEscape;
@@ -1241,6 +1281,7 @@ namespace LastLight.EditorTools
                 return throwTarget != null;
             });
             int throwStart = director.EventLog.Count;
+            int bankBeforeThrow = director.Save.Coins, runCoinsBeforeThrow = director.Coins;
             bool throwNotEarly = true;
             if (throwTarget != null)
             {
@@ -1256,6 +1297,10 @@ namespace LastLight.EditorTools
             }
             bool rockThrown = director.EventLog.Skip(throwStart).Any(l => l.Contains("Threw a rock at a spitter"));
             bool rockKnockedDown = director.EventLog.Skip(throwStart).Any(l => l.Contains("A thrown rock knocked down a shooter")) && (object)throwTarget != null && !throwTarget.alive;
+            int rewardLines = director.EventLog.Skip(throwStart).Count(l => l.Contains("Rock hit reward: +20 coins"));
+            int coinPickups = director.EventLog.Skip(throwStart).Count(l => l.Contains("Coin collected"));
+            bool rockRewarded = rewardLines >= 1 && director.Save.Coins == bankBeforeThrow + rewardLines * GameDirector.RockHitCoins + coinPickups
+                && director.Coins == runCoinsBeforeThrow + rewardLines * GameDirector.RockHitCoins + coinPickups;
             stats.AppendLine($"Rock throw: target {(throwTarget != null ? throwTarget.DioramaLocal.ToString("0.0") : "none")}, not early {throwNotEarly}, thrown {rockThrown}, knocked down {rockKnockedDown}");
 
             // ----- Evasion level 2: some crashes cost no health -----
@@ -1366,7 +1411,9 @@ namespace LastLight.EditorTools
             Check("Run-over panel appears after the crash plays out", crashed1 && panelWaits && panelShown);
             Check("Respawn is refused without coins", respawnFocused && refusedWithoutCoins && enabledWithCoins);
             Check($"Respawn costs {director.respawnBaseCost} and continues the run", respawn1 && survivesGrace);
-            Check("Each further respawn in a run costs twice as much", crashed2 && respawn2);
+            Check($"Each further respawn costs 2x, then 3x, then 4x the last ({string.Join(", ", Enumerable.Range(0, 5).Select(n => GameDirector.RespawnCost(100, n).ToString("N0")))})",
+                crashed2 && respawn2 && GameDirector.RespawnCost(100, 0) == 100 && GameDirector.RespawnCost(100, 1) == 200 && GameDirector.RespawnCost(100, 2) == 600
+                && GameDirector.RespawnCost(100, 3) == 2400 && GameDirector.RespawnCost(100, 4) == 12000 && GameDirector.RespawnCost(100, 40) == int.MaxValue);
             Check($"Panel ignores small head turns ({smallTurnMove * 100f:0.0} cm) and glides back after big ones ({settledOff:0.0} deg)", crashed3 && smallTurnMove < 0.005f && midway > 8f && settledOff < 6f);
             Check("Retry starts a fresh run", retryWorks);
             Check("Main Menu returns to the title", crashed4 && menuWorks);
@@ -1425,7 +1472,7 @@ namespace LastLight.EditorTools
             }
             Check($"Storm: rain, wet surfaces, puddles on the road and the weather dial ({strikes} lightning strikes)", stormRain && strikes > 0);
             Check($"Storm no longer makes the jeep slippery ({stormSkids} skids)", stormNotSlippery && stormSkids == 0);
-            Check($"Storm: broken branches blow across the road ({branchesBlown} in 11 s), more often later in a run", branchesBlown >= 2 && branchMoves && branchesRamp);
+            Check($"Storm: broken branches blow across the road in front of the jeep ({branchesBlown} in 11 s, {crossedAhead} crossed the centre ahead), more often later in a run", branchesBlown >= 4 && branchMoves && crossedAhead >= 2 && branchesRamp);
             Check("Storm clears and the puddles dry up", stormCleared && puddlesDry);
             Check("Snow: falling snow, white cover on everything and the weather dial", snowFalls);
             Check($"Snow: slippery, amplified steering and random skids ({snowSkids} skids)", snowSlippery && snowSkids > 0);
@@ -1433,7 +1480,12 @@ namespace LastLight.EditorTools
             Check($"Controls trait steadies the jeep on snow (slip {slipLevel1:0.00} at level 1, {slipLevel2:0.00} at level 2)", controlsSteady);
             Check("Snow clears, handling returns to normal and the cover melts", snowCleared && snowMelted);
             // 0.1.12 changes
-            Check($"Powerup stares take {Pickup.StareSeconds:0.0} s and storage items {StorageCatalog.UseSeconds:0.0} s", Mathf.Approximately(Pickup.StareSeconds, 1.5f) && Mathf.Approximately(StorageCatalog.UseSeconds, 1f));
+            {
+                bool stepsDown = true;
+                for (float dd = 0f; dd < 3000f; dd += 10f) if (Pickup.StareSecondsAt(dd + 10f) > Pickup.StareSecondsAt(dd) || Pickup.StareSecondsAt(dd) < 0.5f) stepsDown = false;
+                Check($"Powerup stares take {Pickup.StareSecondsAt(0f):0.00} s at the start, {Pickup.StareSecondsAt(600f):0.00} s at 600 m, {Pickup.StareSecondsAt(3000f):0.00} s at the most; storage items {StorageCatalog.UseSeconds:0.0} s",
+                    Mathf.Approximately(Pickup.StareSecondsAt(0f), 1f) && Pickup.StareSecondsAt(600f) < 1f && Mathf.Approximately(Pickup.StareSecondsAt(3000f), 0.5f) && stepsDown && Mathf.Approximately(StorageCatalog.UseSeconds, 1f));
+            }
             Check("Dashboard: big 3-segment health dial in the middle, weather dial on its left, storage built in on its right", rackInDash && director.Gauges.root.Find("Speed Readout") == null && director.Gauges.root.Find("Horde Icon") == null && director.Gauges.root.Find("Weather Icon Snow") != null
                 && director.Gauges.Value(Gauge.Health).Contains("/"));
             Check($"Flashlights are common in every stage ({Share(GameStage.Early, PickupKind.Flashlight):P0} / {Share(GameStage.Medium, PickupKind.Flashlight):P0} / {Share(GameStage.Late, PickupKind.Flashlight):P0}) and one waits before the weather (at {guaranteedFlashlightS:0} m)",
@@ -1448,14 +1500,16 @@ namespace LastLight.EditorTools
                 && StorageCatalog.Items.All(i => i == PickupKind.Repair || StorageCatalog.Price(i) < StorageCatalog.Price(PickupKind.Repair)));
             Check("Rhino starts every run with a shovel fitted, outside the compartment", rhinoShovel);
             Check("Angel Transponder: the most expensive vehicle, first respawn in a run free, then the usual price", angelPricedTop && angelFirstFree && freeRespawned && secondCostsBase);
-            Check($"Three-lane barricades from the medium stage: 1 and 2 lanes blocked ({laneRows[1]}/{laneRows[2]}/{laneRows[3]} rows), the autopilot finds a free lane ({barricadeHits} hits)",
-                laneRows[1] > 0 && laneRows[2] > 0 && barricadeHits <= laneRows[3] + (laneRows[1] + laneRows[2]) / 5);
-            Check("Late barricade rows lean to two lanes, with a small chance of all three", BarricadeOdds());
+            Check($"Three-way splits from the medium stage: the autopilot takes a clear branch ({threeWayTaken} taken, {threeWayClear} clear, {threeWayAllBlocked} fully barricaded)",
+                threeWayTaken >= 2 && threeWayClear >= threeWayTaken - threeWayAllBlocked);
+            Check("Three-way splits start with 2 of 3 clear, then 1 of 3, then all 3 barricaded", ThreeWayProgression());
+            Check("The shovel smashes through a split road's dead-end wall without stopping", shovelBreaksWall);
             Check($"Twin cliff roads from {TrackGenerator.TwinCliffsFrom:0} m: the first is safe both ways, later ones have a dead end ({twinsPlanned} planned, {twinDeadPlanned} with a dead end)", twinsPlanned >= 2 && firstTwinSafe && twinDeadPlanned >= 1);
             Check("Twin cliff road shape: two strips, one narrower, a ridge across, and the dead strip ends in a drop", stripsSplit && oneNarrower && ridgeBridges && deadStripDrops && safeRespawn);
             Check($"The autopilot crosses twin cliff roads on the safe strip ({twinCrossings} crossed, survived {lateSurvived}, {lateDistance:0} m)", twinCrossings >= 1 && lateSurvived);
             Check("Switching across the ridge gets the jeep off a dead strip; riding it to the end drops into the abyss", tookDeadStrip && ridgeEscaped && deadEndDrops);
             Check("A second's stare at a spitter throws a rock that knocks it down", (object)throwTarget != null && throwNotEarly && rockThrown && rockKnockedDown);
+            Check($"Knocking a spitter down with a rock pays {GameDirector.RockHitCoins} coins", rockRewarded);
             Check($"Traits panel: the Scout Jeep carries traits free; another vehicle pays a one-time transfer fee first", jeepCarriesFree && upgradeNeedsTransfer && transferred);
             Check("Visibility level 1 widens the gaze radius by 15%", visibilityUp && Mathf.Approximately(TraitCatalog.VisibilityScale(1), 1.15f) && Mathf.Approximately(TraitCatalog.VisibilityScale(2), 1.3f));
             Check("Traits carry over only to vehicles that paid, including later upgrades; second levels cost much more", unlinkedHasNone && rhinoWithoutFee && carriesLaterUpgrades && traitPricing);
@@ -1501,22 +1555,29 @@ namespace LastLight.EditorTools
 
         static float ShieldShare(GameStage stage) => Share(stage, PickupKind.Shield);
 
-        /// <summary>Barricade rows seeded across many late chunks: two-lane rows are the most common, three-lane rows rare.</summary>
-        static bool BarricadeOdds()
+        /// <summary>
+        /// Three-way splits seeded over several runs: none before the medium stage, only one branch barricaded until
+        /// 650 m, two after that, and all three from 1 km.
+        /// </summary>
+        static bool ThreeWayProgression()
         {
-            var root = new GameObject("Barricade Odds").transform;
+            var root = new GameObject("Three-way Odds").transform;
             var mat = new Material(Shader.Find("LastLight/Diorama"));
-            int[] rows = new int[4];
+            var plan = new System.Collections.Generic.List<Vector2>();
             for (int seed = 1; seed <= 6; seed++)
             {
                 var t = new TrackGenerator(root, mat, mat, seed);
-                for (float dist = 0f; dist < 1600f; dist += 6f) t.Scroll(dist, 0f, Mathf.FloorToInt(dist / 120f), 20f);
-                for (int i = 1; i < 4; i++) rows[i] += t.LaneRows[i];
+                for (float dist = 0f; dist < 1800f; dist += 6f) t.Scroll(dist, 0f, Mathf.FloorToInt(dist / 120f), 20f);
+                plan.AddRange(t.ThreeWayPlan);
                 t.Reset();
             }
             Object.DestroyImmediate(root.gameObject);
-            Debug.Log($"[LastLight] Barricade rows over 6 seeds: {rows[1]} / {rows[2]} / {rows[3]}");
-            return rows[2] > 0 && rows[3] > 0 && rows[3] < rows[2] * 0.25f && rows[1] > 0;
+            bool none = plan.All(p => p.x >= TrackGenerator.ThreeWayFrom);
+            bool earlyOne = plan.Where(p => p.x < TrackGenerator.TwoBlockedFrom).All(p => p.y == 1) && plan.Any(p => p.x < TrackGenerator.TwoBlockedFrom);
+            bool midTwo = plan.Any(p => p.x >= TrackGenerator.TwoBlockedFrom && p.y == 2) && plan.Where(p => p.x < TrackGenerator.AllBlockedFrom).All(p => p.y <= 2);
+            bool lateThree = plan.Any(p => p.x >= TrackGenerator.AllBlockedFrom && p.y == 3);
+            Debug.Log($"[LastLight] Three-way splits over 6 seeds: {plan.Count}; {string.Join(", ", plan.Select(p => $"{p.x:0} m/{p.y:0}"))}");
+            return none && earlyOne && midTwo && lateThree;
         }
 
         static void Render(Camera cam, RenderTexture rt, Vector3 pos, Vector3 lookAt, string file)

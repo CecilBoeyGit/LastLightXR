@@ -5,7 +5,8 @@ namespace LastLight
     public enum PickupKind { Coin, Booster, Shield, Flashlight, Turret, Shovel, Repair }
 
     /// <summary>
-    /// A floating pickup. Powerups sit beside the road and are collected by staring at them for 1.5 seconds.
+    /// A floating pickup. Powerups sit beside the road and are collected by staring at them: 1 second at the start
+    /// of a run, a little quicker every 150 m, down to half a second.
     /// Coins sit on the road at jeep height and are collected by driving through them.
     /// Both show while lit or on the disk, and stay until collected or until they pass behind the disk.
     /// </summary>
@@ -21,8 +22,21 @@ namespace LastLight
         GameObject visual;
         static Mesh coinMesh, boosterMesh, shieldMesh, flashlightMesh, turretMesh, shovelMesh, repairMesh;
 
-        public const float StareSeconds = 1.5f;
-        public float DwellSeconds => StareSeconds;
+        /// <summary>Stare time at the start of a run.</summary>
+        public const float StareSeconds = 1f;
+        /// <summary>The stare time never drops below this.</summary>
+        public const float MinStareSeconds = 0.5f;
+        /// <summary>Every this many metres the stare gets a little quicker.</summary>
+        public const float StareStepMetres = 150f;
+        public const float StareStepSeconds = 0.05f;
+        /// <summary>The stare time now: set by the director as the run goes on.</summary>
+        public static float CurrentStareSeconds = StareSeconds;
+
+        /// <summary>1 s at the start, 0.05 s quicker every 150 m, never under 0.5 s (reached at 1.5 km).</summary>
+        public static float StareSecondsAt(float distance)
+            => Mathf.Max(MinStareSeconds, StareSeconds - Mathf.Floor(Mathf.Max(distance, 0f) / StareStepMetres) * StareStepSeconds);
+
+        public float DwellSeconds => CurrentStareSeconds;
         public float Progress => Mathf.Clamp01(dwell / DwellSeconds);
         public bool Visible => visual != null && visual.activeSelf;
 

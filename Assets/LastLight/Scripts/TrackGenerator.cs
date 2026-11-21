@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace LastLight
 {
-    public enum ChunkType { Quiet, Blocked1, Blocked2, Rockfall, Fork, Cliff, Lanes }
+    public enum ChunkType { Quiet, Blocked1, Blocked2, Rockfall, Fork, Cliff }
 
     /// <summary>How far into a run: early under 300 m, medium to 700 m, late after that.</summary>
     public enum GameStage { Early, Medium, Late }
@@ -23,18 +23,32 @@ namespace LastLight
         public Mesh terrainMesh;
         public readonly List<Mesh> propMeshes = new List<Mesh>();   // merged Tripo pines, rocks and grass
         public Transform puddles;                                     // shown while the road is wet
-        public int lanesBlocked;                                      // barricades across a three-lane stretch
     }
 
     /// <summary>
     /// A split in the road. Two branches open around a wooded island and rejoin later.
     /// Early forks load one branch with obstacles; later forks can wall one branch off as a dead end.
+    /// From the medium stage a split can have three branches (left, middle, right) round two islands, with
+    /// barricades across some of them: first one of the three, later two, and further on all three.
+    /// Branch sides are -1 left, +1 right and <see cref="Middle"/> for the middle one.
     /// </summary>
     public class Fork
     {
+        public const int Middle = 2;
         public float startS, length;
         public int deadSide;        // -1 or +1 when that branch is a dead end
         public int obstacleSide;    // -1 or +1 when that branch holds extra obstacles
+        public int ways = 2;        // 2 or 3 branches
+        public readonly bool[] blocked = new bool[3];   // three-way: barricaded branches, indexed left, middle, right
+        public float maxOffset = 7.5f;      // how far the outer branches open from the centreline
+        public float branchHalf = 3f;       // half width of each branch once open
+        public bool wallBroken;     // a shovel smashed the dead-end wall
+        public bool ThreeWay => ways == 3;
+        public static int Index(int side) => side == Middle ? 1 : side < 0 ? 0 : 2;
+        public bool Blocked(int side) => ThreeWay && side != 0 && blocked[Index(side)];
+        public int BlockedCount => (blocked[0] ? 1 : 0) + (blocked[1] ? 1 : 0) + (blocked[2] ? 1 : 0);
+        /// <summary>Where a branch's centre sits for a given outer-branch offset.</summary>
+        public static float BranchX(int side, float offset) => side == Middle ? 0f : side * offset;
         public float EndS => startS + length;
         public float WallS => startS + length * WallFraction;
         public const float WallFraction = 0.72f;
@@ -94,9 +108,13 @@ namespace LastLight
         const int FirstPowerupChunk = 10;
         /// <summary>Cliff roads from here on are twin strips.</summary>
         public const float TwinCliffsFrom = 600f;
-        /// <summary>Three-lane stretches with barricades start with the medium stage.</summary>
-        public const float LanesFrom = MediumStageFrom;
-        public const float LaneWidth = Diorama.RoadHalfWidth * 2f / 3f;
+        /// <summary>Three-way splits start with the medium stage.</summary>
+        public const float ThreeWayFrom = MediumStageFrom;
+        /// <summary>Three-way splits from here on usually have two of the three branches barricaded.</summary>
+        public const float TwoBlockedFrom = 650f;
+        /// <summary>And from here on often all three.</summary>
+        public const float AllBlockedFrom = 1000f;
+        const float ThreeWayOffset = 8.6f, ThreeWayHalf = 2.5f;
         const float BarricadeHalfWidth = 1.32f;
         static readonly int GuaranteedFlashlightChunk = Mathf.CeilToInt(450f / ChunkLength);
         public const float MediumStageFrom = 300f;
@@ -126,8 +144,10 @@ namespace LastLight
         public int TurretsSpawnedEarly { get; private set; }
         /// <summary>Distance of the flashlight always placed before the weather can start, or -1. For tests.</summary>
         public float GuaranteedFlashlightS { get; private set; } = -1f;
-        /// <summary>Barricade rows generated so far, counted by how many lanes they block (index 1 to 3). For tests.</summary>
-        public readonly int[] LaneRows = new int[4];
+        /// <summary>Three-way splits generated so far, counted by how many branches are barricaded (index 1 to 3). For tests.</summary>
+        public readonly int[] ThreeWaySplits = new int[4];
+        /// <summary>Distance where each three-way split starts, with how many branches it blocks. For tests.</summary>
+        public readonly List<Vector2> ThreeWayPlan = new List<Vector2>();
         /// <summary>Twin cliff roads planned so far, and how many had a dead end. For tests.</summary>
         public int TwinCliffs { get; private set; }
         public int TwinDeadEnds { get; private set; }
@@ -208,8 +228,8 @@ namespace LastLight
         {
             float t = Mathf.Clamp01((s - f.startS) / f.length);
             float open = Smooth(0f, 0.25f, t) * (1f - Smooth(0.8f, 1f, t));
-            offset = MaxBranchOffset * open;
-            halfWidth = Mathf.Lerp(Diorama.RoadHalfWidth, BranchHalfWidth, open);
+            offset = f.maxOffset * open;
+            halfWidth = Mathf.Lerp(Diorama.RoadHalfWidth, f.branchHalf, open);
         }
 
         /// <summary>
@@ -368,6 +388,7 @@ namespace LastLight
             Branch(f, s, out float b, out float w);
             float left = Mathf.Abs(xRel + b) - w;
             float right = Mathf.Abs(xRel - b) - w;
+            if (f.ThreeWay) return Mathf.Min(Mathf.Min(left, right), Mathf.Abs(xRel) - w);
             if (f.deadSide != 0 && s > f.WallS)
             {
                 // Past the wall the dead branch narrows to the escape track through the forest.
@@ -400,11 +421,19 @@ namespace LastLight
             if (f == null) return open;
 
             Branch(f, s, out float b, out float w);
+            if (f.ThreeWay)
+            {
+                // Thirds of the crowd take the left, middle and right branches.
+                int third = frac < -1f / 3f ? -1 : frac > 1f / 3f ? 1 : Fork.Middle;
+                float local = third == Fork.Middle ? frac * 3f : (frac - third * 2f / 3f) * 3f;   // spot inside its branch, -1 to 1
+                float inThird = Fork.BranchX(third, b) + Mathf.Clamp(local, -1f, 1f) * Mathf.Max(w - BodyMargin, 0.2f);
+                return Mathf.Lerp(open, inThird, Mathf.Clamp01(b / f.maxOffset * 4f));
+            }
             float side = frac < 0f ? -1f : 1f;
             float within = Mathf.Abs(frac) * 2f - 1f;   // spot inside this walker's own branch
             float inBranch = side * b + within * (w - BodyMargin);
             // Blend so the crowd neither pops at the split nor at the rejoin.
-            float x = Mathf.Lerp(open, inBranch, Mathf.Clamp01(b / MaxBranchOffset * 4f));
+            float x = Mathf.Lerp(open, inBranch, Mathf.Clamp01(b / f.maxOffset * 4f));
 
             if (f.deadSide != 0 && side == f.deadSide)
             {
@@ -449,6 +478,21 @@ namespace LastLight
                 max = c + room;
                 return;
             }
+            if (f.ThreeWay)
+            {
+                if (side != 0 && b > 2f * w)
+                {
+                    float bc = Fork.BranchX(side, b);
+                    min = bc - w + CarMargin;
+                    max = bc + w - CarMargin;
+                }
+                else
+                {
+                    min = -b - w + CarMargin;
+                    max = b + w - CarMargin;
+                }
+                return;
+            }
             bool useBranch = side != 0 && (b > w || f.deadSide != 0);
             if (useBranch)
             {
@@ -469,7 +513,17 @@ namespace LastLight
             Fork f = ForkAt(s);
             if (f == null) return false;
             Branch(f, s, out float b, out float w);
-            return b > w;
+            return f.ThreeWay ? b > 2f * w : b > w;
+        }
+
+        /// <summary>The branch a road-relative X falls in at s inside a fork: -1, +1, or Fork.Middle on a three-way split.</summary>
+        public int BranchAt(float xRel, float s)
+        {
+            Fork f = ForkAt(s);
+            if (f == null) return 0;
+            if (!f.ThreeWay) return xRel < 0f ? -1 : 1;
+            Branch(f, s, out float b, out _);
+            return Mathf.Abs(xRel) < b * 0.5f ? Fork.Middle : xRel < 0f ? -1 : 1;
         }
 
         float Height(float xRel, float s, float cliff)
@@ -541,7 +595,8 @@ namespace LastLight
             GuaranteedShieldS = -1f;
             TurretsSpawnedEarly = 0;
             GuaranteedFlashlightS = -1f;
-            System.Array.Clear(LaneRows, 0, LaneRows.Length);
+            System.Array.Clear(ThreeWaySplits, 0, ThreeWaySplits.Length);
+            ThreeWayPlan.Clear();
             TwinCliffs = TwinDeadEnds = 0;
             nextIndex = 0;
             lastType = ChunkType.Quiet;
@@ -609,7 +664,6 @@ namespace LastLight
             BuildTerrain(mb, c);
             BuildEdgePosts(mb, c);
             if (c.type == ChunkType.Cliff) BuildTwinMarks(mb, c);
-            if (c.type == ChunkType.Lanes) BuildLaneLines(mb, c);
             var props = SceneryModels.Active;
             var pines = props != null && props.HasPine ? new PropBatch(props.pineMesh) : null;
             var rocks = props != null && props.HasRock ? new PropBatch(props.rockMesh) : null;
@@ -624,7 +678,6 @@ namespace LastLight
 
             BuildPuddles(c);
             if (c.type == ChunkType.Blocked1 || c.type == ChunkType.Blocked2) PlaceBlocker(c, rng);
-            if (c.type == ChunkType.Lanes) PlaceBarricades(c, rng);
             if (c.type == ChunkType.Fork) PlaceForkContents(c, rng);
             PlacePickups(c, rng);
             PlaceShooters(c, rng);
@@ -666,10 +719,6 @@ namespace LastLight
             if (index < 3) return ChunkType.Quiet;
             float breather = Mathf.Lerp(0.75f, 0.35f, Mathf.Clamp01(difficultyStep / 8f));
             if (lastWasHazard && rng.NextDouble() < breather) return ChunkType.Quiet;
-            // Three-lane stretches with barricades from the medium stage, a little more often late on.
-            float startS = index * ChunkLength;
-            if (startS >= LanesFrom && lastType != ChunkType.Lanes && rng.NextDouble() < (StageAt(startS) == GameStage.Late ? 0.3 : 0.22))
-                return ChunkType.Lanes;
             double r = rng.NextDouble();
             bool allowWide = index > 8;
             if (r < 0.25) return ChunkType.Quiet;
@@ -683,7 +732,8 @@ namespace LastLight
             int chunksLong = 3 + rng.Next(2);
             var f = new Fork { startS = index * ChunkLength, length = chunksLong * ChunkLength };
             int side = rng.NextDouble() < 0.5 ? -1 : 1;
-            if (index >= DeadEndsFromChunk && rng.NextDouble() < 0.6) f.deadSide = side;
+            if (f.startS >= ThreeWayFrom && rng.NextDouble() < 0.6) PlanThreeWay(f, rng);
+            else if (index >= DeadEndsFromChunk && rng.NextDouble() < 0.6) f.deadSide = side;
             else f.obstacleSide = side;
             forks.Add(f);
             currentFork = f;
@@ -691,6 +741,26 @@ namespace LastLight
             forkUntilIndex = index + chunksLong;
             nextForkIndex = forkUntilIndex + 6 + rng.Next(6);
             nextCliffIndex = Mathf.Max(nextCliffIndex, forkUntilIndex + 2);
+        }
+
+        /// <summary>
+        /// A three-way split: in the medium stage one branch of three is barricaded; from 650 m usually two; from 1 km
+        /// often all three, so the only ways through are a shovel, a shield or a crash.
+        /// </summary>
+        void PlanThreeWay(Fork f, System.Random rng)
+        {
+            f.ways = 3;
+            f.maxOffset = ThreeWayOffset;
+            f.branchHalf = ThreeWayHalf;
+            double r = rng.NextDouble();
+            int count = f.startS >= AllBlockedFrom ? (r < 0.6 ? 3 : 2)
+                : f.startS >= TwoBlockedFrom ? (r < 0.75 ? 2 : 1)
+                : 1;
+            var order = new List<int> { 0, 1, 2 };
+            for (int i = 0; i < order.Count; i++) { int j = rng.Next(i, order.Count); (order[i], order[j]) = (order[j], order[i]); }
+            for (int i = 0; i < count; i++) f.blocked[order[i]] = true;
+            ThreeWaySplits[count]++;
+            ThreeWayPlan.Add(new Vector2(f.startS, count));
         }
 
         void StartCliff(int index, System.Random rng)
@@ -799,6 +869,19 @@ namespace LastLight
                     continue;
                 }
                 Branch(f, s, out float b, out float w);
+                if (f.ThreeWay)
+                {
+                    AddPost(mb, cx - b - w, z);
+                    AddPost(mb, cx + b + w, z);
+                    if (b > 2f * w)
+                    {
+                        AddPost(mb, cx - b + w, z);
+                        AddPost(mb, cx + b - w, z);
+                        AddPost(mb, cx - w, z);
+                        AddPost(mb, cx + w, z);
+                    }
+                    continue;
+                }
                 bool deadGone = f.deadSide != 0 && s > f.WallS;
                 if (!(deadGone && f.deadSide < 0)) AddPost(mb, cx - b - w, z);
                 if (!(deadGone && f.deadSide > 0)) AddPost(mb, cx + b + w, z);
@@ -860,19 +943,6 @@ namespace LastLight
                         mb.Box(p + new Vector3(dir * 0.1f, -0.15f, 0f), new Vector3(0.12f, 0.42f, 0.08f), Quaternion.Euler(0f, 0f, -dir * 40f), Palette.EscapeMarker);
                     }
                 }
-            }
-        }
-
-        /// <summary>Dashed lane lines splitting the road into three lanes, for a barricade chunk.</summary>
-        void BuildLaneLines(MeshBuilder mb, Chunk c)
-        {
-            for (float z = 0.3f; z < ChunkLength - 0.4f; z += 2f)
-            {
-                float s = c.startS + z + 0.6f;
-                float cx = Center(s);
-                float yaw = Mathf.Atan(Slope(s)) * Mathf.Rad2Deg;
-                for (int i = -1; i <= 1; i += 2)
-                    mb.Box(new Vector3(cx + i * LaneWidth * 0.5f, 0.03f, z + 0.6f), new Vector3(0.14f, 0.04f, 1.2f), Quaternion.Euler(0f, yaw, 0f), Palette.LaneMark * 1.2f);
             }
         }
 
@@ -1022,6 +1092,30 @@ namespace LastLight
                 wall.halfWidth = w + 1f;
                 wall.escapeX = EscapeCenter(f, f.WallS);
                 wall.transform.localPosition = new Vector3(Center(f.WallS) + f.deadSide * b, 0f, z);
+            }
+
+            if (f.ThreeWay)
+            {
+                // A row of barricades across each blocked branch, where the branches are fully apart.
+                float rowS = f.startS + f.length * 0.5f;
+                if (rowS >= c.startS && rowS < chunkEnd)
+                {
+                    Branch(f, rowS, out float b, out float w);
+                    float z = rowS - c.startS;
+                    float yaw = Mathf.Atan(Slope(rowS)) * Mathf.Rad2Deg;
+                    foreach (int side in new[] { -1, Fork.Middle, 1 })
+                    {
+                        if (!f.Blocked(side)) continue;
+                        float bx = Fork.BranchX(side, b);
+                        for (int k = -1; k <= 1; k += 2)
+                        {
+                            var h = SpawnHazard(c, HazardKind.Barricade, barricadeMesh);
+                            h.halfWidth = BarricadeHalfWidth;
+                            h.transform.localPosition = new Vector3(Center(rowS) + bx + k * (w - BarricadeHalfWidth), 0f, z);
+                            h.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
+                        }
+                    }
+                }
             }
 
             if (f.obstacleSide != 0)
@@ -1187,33 +1281,6 @@ namespace LastLight
                 if (dist >= 2.5f && dist <= 8f) return xRel;
             }
             return (rng.NextDouble() < 0.5 ? -1f : 1f) * (Diorama.RoadHalfWidth + 5f);
-        }
-
-        /// <summary>
-        /// A row of barricades across a three-lane stretch. In the medium stage one lane is blocked (sometimes two);
-        /// late on two is the usual, with a small chance all three are, so something has to be smashed.
-        /// </summary>
-        void PlaceBarricades(Chunk c, System.Random rng)
-        {
-            double r = rng.NextDouble();
-            float t = Mathf.Clamp01((c.startS - LateStageFrom) / 800f);
-            int count = StageAt(c.startS) == GameStage.Late
-                ? (r < Mathf.Lerp(0.42f, 0.25f, t) ? 1 : r < Mathf.Lerp(0.96f, 0.9f, t) ? 2 : 3)
-                : (r < 0.7 ? 1 : 2);
-            var lanes = new List<int> { -1, 0, 1 };
-            for (int i = 0; i < lanes.Count; i++) { int j = rng.Next(i, lanes.Count); (lanes[i], lanes[j]) = (lanes[j], lanes[i]); }
-            float z = ChunkLength * 0.62f;
-            float s = c.startS + z;
-            float yaw = Mathf.Atan(Slope(s)) * Mathf.Rad2Deg;
-            for (int i = 0; i < count; i++)
-            {
-                var h = SpawnHazard(c, HazardKind.Barricade, barricadeMesh);
-                h.halfWidth = BarricadeHalfWidth;
-                h.transform.localPosition = new Vector3(Center(s) + lanes[i] * LaneWidth, 0f, z);
-                h.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
-            }
-            c.lanesBlocked = count;
-            LaneRows[count]++;
         }
 
         /// <summary>Dark puddles on the road, hidden until the road is wet.</summary>

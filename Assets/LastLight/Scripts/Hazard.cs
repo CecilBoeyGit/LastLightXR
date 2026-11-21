@@ -93,9 +93,10 @@ namespace LastLight
                 timer += dt;
                 Vector3 p = transform.localPosition;
                 p.x += driftX * dt;
-                p.y = Mathf.Abs(Mathf.Sin(timer * 5.5f)) * 0.25f;
+                p.y = Mathf.Abs(Mathf.Sin(timer * 5.5f)) * 0.45f;
                 transform.localPosition = p;
-                transform.localRotation = Quaternion.AngleAxis(Mathf.Sin(timer * 3f) * 18f + tumble, Vector3.up) * Quaternion.AngleAxis(Mathf.Sin(timer * 7f) * 10f, Vector3.forward);
+                // Cartwheeling round as it goes, so it reads as blown debris rather than a sliding log.
+                transform.localRotation = Quaternion.AngleAxis(tumble + timer * Mathf.Sign(driftX) * 140f, Vector3.up) * Quaternion.AngleAxis(Mathf.Sin(timer * 7f) * 14f, Vector3.forward);
                 if ((driftX > 0f && p.x > driftEndX) || (driftX < 0f && p.x < driftEndX)) { alive = false; gameObject.SetActive(false); }
                 return false;
             }

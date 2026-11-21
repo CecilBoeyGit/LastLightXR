@@ -39,7 +39,7 @@ namespace LastLight
         const float SkidSeconds = 0.45f;
         const float PickupKeepRadius = 3.6f;    // a powerup already being stared at stays the target this far out
         const float PickupLoseGrace = 0.2f;     // and survives this long with the eyes off it
-        const float BranchGapStart = 3.2f, BranchGapEnd = 1.3f;     // seconds between blown branches, early and late in a run
+        const float BranchGapStart = 1.9f, BranchGapEnd = 0.9f;     // seconds between blown branches, early and late in a run
 
         [Header("Scene references")]
         public Diorama diorama;
@@ -85,8 +85,10 @@ namespace LastLight
         public float acidSeconds = 0.75f;
 
         [Header("Coins")]
-        [Tooltip("Cost of the first respawn in a run. Each further respawn in the same run doubles it.")]
-        public int respawnBaseCost = 25;
+        /// <summary>Cost of the first paid respawn in a run. The next costs 2x that, the one after 3x the last, and so on.</summary>
+        [System.NonSerialized] public int respawnBaseCost = 100;
+        /// <summary>Coins for knocking a spitter down with a thrown rock.</summary>
+        public const int RockHitCoins = 20;
         [Tooltip("Save the coin bank, unlocks and garage choices between sessions. Tests turn this off.")]
         public bool persistProgress = true;
 
@@ -149,7 +151,18 @@ namespace LastLight
         public HandFrame? ScriptedLeftHand, ScriptedRightHand;
         public float AcidTime => car.acid;
         public int RespawnsThisRun => respawnsThisRun;
-        public int NextRespawnCost => FreeRespawnAvailable ? 0 : respawnBaseCost * (1 << Mathf.Min(paidRespawns, 20));
+        public int NextRespawnCost => FreeRespawnAvailable ? 0 : RespawnCost(respawnBaseCost, paidRespawns);
+
+        /// <summary>
+        /// The cost of a paid respawn after <paramref name="paidBefore"/> paid ones this run: the base, then twice that,
+        /// then three times the last, four times the one before... (100, 200, 600, 2,400, 12,000 ...), capped so it can't overflow.
+        /// </summary>
+        public static int RespawnCost(int baseCost, int paidBefore)
+        {
+            long cost = baseCost;
+            for (int i = 2; i <= paidBefore + 1 && cost < int.MaxValue; i++) cost *= i;
+            return (int)System.Math.Min(cost, int.MaxValue);
+        }
         public bool GameOverPanelShown => gameOverPanel.Visible;
         /// <summary>Everything that belongs to the forest world, hidden while the garage is open.</summary>
         public Transform WorldRoot => worldRoot;
@@ -340,7 +353,15 @@ namespace LastLight
             qte.OnCancelled = () => Log("Repair cancelled");
             thrower = new RockThrower(worldRoot, pickupMaterial, glowMaterial);
             thrower.OnThrow = z => { sound?.Play(sound.sweep, 0.7f); Log($"Threw a rock at a spitter {z.DioramaLocal.z:0} units ahead"); };
-            thrower.OnHit = z => KillShooter(z, "A thrown rock knocked down");
+            thrower.OnHit = z =>
+            {
+                KillShooter(z, "A thrown rock knocked down");
+                Coins += RockHitCoins;
+                progress.AddCoins(RockHitCoins);
+                sound?.Play(sound.coin);
+                thrower.Popup(z.CenterDioramaLocal + Vector3.up * 1.6f, $"+{RockHitCoins}", HeadLocal);
+                Log($"Rock hit reward: +{RockHitCoins} coins, bank {progress.Coins}");
+            };
             trails = new SnowTrails(worldRoot, terrainMaterial);
 
             dwellBlock = new MaterialPropertyBlock();
@@ -375,7 +396,9 @@ namespace LastLight
             t.OnCliffPlanned = r => Log(r.twin
                 ? $"Twin cliff road planned at {r.startS:0} m: {(r.deadSide == 0 ? "both strips safe" : $"the {(r.deadSide < 0 ? "left" : "right")} strip ends in a drop")}, ridge at {r.ridgeS:0} m"
                 : $"Cliff road planned at {r.startS:0} m: half width {r.halfWidth:0.00}");
-            t.OnForkPlanned = f => Log($"Split planned at {f.startS:0} m: {(f.deadSide != 0 ? "has a dead end" : "has an obstacle branch")}");
+            t.OnForkPlanned = f => Log(f.ThreeWay
+                ? $"Three-way split planned at {f.startS:0} m: {f.BlockedCount} of 3 branches barricaded"
+                : $"Split planned at {f.startS:0} m: {(f.deadSide != 0 ? "has a dead end" : "has an obstacle branch")}");
             return t;
         }
 
@@ -641,24 +664,32 @@ namespace LastLight
             trails.Tick(weather.SnowCover, running && !car.falling, carS, car.x, Distance, track);
             if (!running) return;
 
-            // Storm: broken branches blow across the road, closer together as the run goes on.
-            if (storm > 0.5f)
+            // Storm: broken branches blow across the road, closer together as the run goes on. Each starts just inside the
+            // far rim, off one edge of the road, and is timed to tumble across about when the jeep gets there.
+            if (storm > 0.3f)
             {
                 branchIn -= dt;
                 if (branchIn <= 0f)
                 {
                     float t = Mathf.Clamp01((Distance - WeatherSystem.FirstFrom) / 1200f);
                     branchIn = Mathf.Lerp(BranchGapStart, BranchGapEnd, t) * (0.75f + (float)branchRng.NextDouble() * 0.5f);
-                    float[] sizes = { 0.55f, 0.85f, 1.2f };
+                    float[] sizes = { 0.75f, 1.05f, 1.45f };
                     float size = sizes[branchRng.Next(sizes.Length)];
                     int dir = branchRng.NextDouble() < 0.5 ? -1 : 1;
-                    float speed = 2.6f + (float)branchRng.NextDouble() * 1.8f;
-                    float ahead = 10f + (float)branchRng.NextDouble() * 6f;
+                    float ahead = 14f + (float)branchRng.NextDouble() * 3.5f;
+                    float arrive = ahead / Mathf.Max(car.speed, 3f);
+                    float across = track.RoadHalfAt(carS + ahead) + 2.2f + ((float)branchRng.NextDouble() - 0.5f) * 3f;
+                    float speed = Mathf.Clamp(across / arrive, 2.5f, 9f);
                     var h = track.SpawnBlownBranch(carS + ahead, dir, size, speed, branchRng);
-                    if (h != null) Log($"A {(size < 0.7f ? "small" : size < 1f ? "medium" : "large")} branch blows across the road from the {(dir > 0 ? "left" : "right")}, {ahead:0} units ahead");
+                    if (h != null)
+                    {
+                        sound?.Play(sound.sweep, 0.35f);
+                        Log($"A {(size < 0.9f ? "small" : size < 1.3f ? "medium" : "large")} branch blows across the road from the {(dir > 0 ? "left" : "right")}, {ahead:0} units ahead");
+                    }
+                    else branchIn = 0.3f;   // a cliff road there: try again shortly
                 }
             }
-            else branchIn = Mathf.Max(branchIn, 0.6f);
+            else branchIn = Mathf.Max(branchIn, 0.4f);
 
             // Snow: random skids on the ice.
             if (snow > 0.3f)
@@ -948,11 +979,13 @@ namespace LastLight
             }
             else if (car.branch == 0 && track.BranchesSeparated(carS))
             {
-                car.branch = car.x < 0f ? -1 : 1;
+                car.branch = track.BranchAt(car.x, carS);
                 Fork f = track.ForkAt(carS);
                 onDeadBranch = f.deadSide == car.branch;
-                string detail = onDeadBranch ? "dead end" : f.obstacleSide == car.branch ? "obstacle branch" : "clear branch";
-                Log($"Took the {(car.branch < 0 ? "left" : "right")} split: {detail}");
+                string detail = onDeadBranch ? "dead end" : f.obstacleSide == car.branch ? "obstacle branch"
+                    : f.Blocked(car.branch) ? "barricaded branch" : "clear branch";
+                string which = car.branch == Fork.Middle ? "middle" : car.branch < 0 ? "left" : "right";
+                Log($"Took the {which} {(f.ThreeWay ? "branch of a three-way split" : "split")}: {detail}");
             }
         }
 
@@ -976,7 +1009,9 @@ namespace LastLight
             if (!running || car.Stalled) return 0f;
             float v = CruiseNow;
             if (boostTimer > 0f) v *= BoostSpeedMultiplier;
-            if (track.InEscapeRoute(Distance + car.boostOffset, car.branch)) return Mathf.Min(v, CruiseNow * EscapeCrawlFraction);
+            // Squeezing through the escape track is a crawl, unless a shovel smashed the wall open.
+            float escS = Distance + car.boostOffset;
+            if (track.InEscapeRoute(escS, car.branch) && !track.ForkAt(escS).wallBroken) return Mathf.Min(v, CruiseNow * EscapeCrawlFraction);
             if (car.scraping) v *= ScrapeSpeedMultiplier;
             if (car.acid > 0f) v = Mathf.Min(v, CruiseNow * acidSpeedCap);
             return v;
@@ -1056,11 +1091,19 @@ namespace LastLight
                 float depth = h.kind == HazardKind.Boulder ? h.radius * 0.8f : 0.5f;
                 float hRel = p.x - roadOffsetAtZ(p.z);
 
-                // The front shovel reaches further ahead and wider than the jeep, and ploughs rocks and trees aside.
-                if (shovel.Active && h.kind != HazardKind.DeadEnd
+                // The front shovel reaches further ahead and wider than the jeep, and ploughs rocks, trees, barricades and
+                // dead-end walls aside. A dead-end wall only counts where the jeep would hit it, not at its escape gap.
+                bool wallInWay = h.kind != HazardKind.DeadEnd || Mathf.Abs(car.x - h.escapeX) > TrackGenerator.EscapeHalfWidth - Vehicle.HalfWidth;
+                if (shovel.Active && wallInWay
                     && dz <= Vehicle.HalfLength + Shovel.Reach + depth && dz >= -Vehicle.HalfLength * 0.5f
                     && Mathf.Abs(car.x - hRel) < h.HalfWidth + Shovel.HalfWidth)
                 {
+                    if (h.kind == HazardKind.DeadEnd)
+                    {
+                        Fork wf = track.ForkAt(Distance + p.z - Diorama.CarZ);
+                        if (wf != null) wf.wallBroken = true;
+                        car.trapped = false;
+                    }
                     float side = Mathf.Sign(hRel - car.x == 0f ? 1f : hRel - car.x);
                     Vector3 push = new Vector3(side * 7f, 2f, car.speed * 0.9f);
                     Shatter(h, push);
@@ -1070,6 +1113,16 @@ namespace LastLight
                     continue;
                 }
 
+                // A trapped jeep can drift back off the wall (a cancelled boost eases it backwards), so lining up with the
+                // gap frees it anywhere just short of the wall, not only while touching it.
+                if (h.kind == HazardKind.DeadEnd && car.trapped && dz > -Vehicle.HalfLength && dz < Vehicle.HalfLength + depth + 10f
+                    && Mathf.Abs(car.x - h.escapeX) <= TrackGenerator.EscapeHalfWidth - Vehicle.HalfWidth)
+                {
+                    car.trapped = false;
+                    sound?.Play(sound.commit);
+                    Log("Lined up with the escape gap");
+                    continue;
+                }
                 if (dz > Vehicle.HalfLength + depth || dz < -Vehicle.HalfLength) continue;
                 if (!car.OverlapsRoadX(hRel, h.HalfWidth)) continue;
 
@@ -1128,6 +1181,7 @@ namespace LastLight
         {
             HazardKind.Boulder => "boulder",
             HazardKind.Barricade => "barricade",
+            HazardKind.DeadEnd => "dead-end wall",
             _ => h.Blown ? "blown branch" : "fallen tree"
         };
 
@@ -1144,7 +1198,12 @@ namespace LastLight
             if (h == null || !h.alive) return;
             Transform parent = h.chunk.root;
             Vector3 at = h.transform.localPosition;
-            if (h.kind == HazardKind.Barricade)
+            if (h.kind == HazardKind.DeadEnd)
+            {
+                fx.Burst(parent, at + Vector3.up * 0.8f, DebrisKind.Rock, 14, 1.1f, push, h.HalfWidth * 0.7f);
+                fx.Burst(parent, at + Vector3.up * 2.6f, DebrisKind.Wood, 8, 0.9f, push, h.HalfWidth * 0.7f);
+            }
+            else if (h.kind == HazardKind.Barricade)
             {
                 fx.Burst(parent, at + Vector3.up * 0.6f, DebrisKind.Metal, 9, 0.8f, push, h.HalfWidth * 0.8f);
                 fx.Burst(parent, at + Vector3.up * 0.3f, DebrisKind.Rock, 5, 0.6f, push, h.HalfWidth * 0.6f);
@@ -1193,6 +1252,7 @@ namespace LastLight
 
         void TickPickups(float dt)
         {
+            Pickup.CurrentStareSeconds = Pickup.StareSecondsAt(Distance);
             bool hasRay = scout.TryGetLocalRay(out Vector3 rayOrigin, out Vector3 rayDir);
             Pickup best = null;
             float bestDist = PickupGazeRadius;
@@ -1456,12 +1516,13 @@ namespace LastLight
                 if (side == 0)
                 {
                     bool seekDeadEnd = autopilotMode == AutopilotMode.TakeDeadEnds || autopilotMode == AutopilotMode.EscapeDeadEnds;
-                    if (fork.deadSide != 0) side = seekDeadEnd ? fork.deadSide : -fork.deadSide;
+                    if (fork.ThreeWay) side = PickThreeWayBranch(fork);
+                    else if (fork.deadSide != 0) side = seekDeadEnd ? fork.deadSide : -fork.deadSide;
                     else if (fork.obstacleSide != 0) side = -fork.obstacleSide;
                     else side = 1;
                 }
                 TrackGenerator.Branch(fork, Mathf.Clamp(carS + 6f, fork.startS, fork.EndS - 0.01f), out float b, out float w);
-                desired = side * Mathf.Max(b, 2f);
+                desired = Fork.BranchX(side, Mathf.Max(b, 2f));
                 // Escape test: drive into the wall first, then steer to the gap and crawl out.
                 if (car.trapped) autoEscaping = true;
                 if (autopilotMode == AutopilotMode.EscapeDeadEnds && fork.deadSide != 0 && car.branch == fork.deadSide && autoEscaping)
@@ -1484,37 +1545,6 @@ namespace LastLight
                 }
                 if (h.kind == HazardKind.FallenTree && dz < nearestDz) { nearestDz = dz; nearest = h; }
             }
-            // A barricade row across three lanes: head for the free lane nearest the jeep (if all three are shut, plough on).
-            float barDz = float.MaxValue;
-            bool barricadeAhead = false;
-            foreach (var h in track.hazards)
-            {
-                if (h == null || !h.alive || h.kind != HazardKind.Barricade) continue;
-                float dz = h.DioramaLocal.z - car.Z;
-                if (dz > -Vehicle.HalfLength - 0.5f && dz < 16f && dz < barDz) barDz = dz;
-            }
-            if (barDz < float.MaxValue && (nearest == null || barDz < nearestDz))
-            {
-                var shut = new bool[3];
-                foreach (var h in track.hazards)
-                {
-                    if (h == null || !h.alive || h.kind != HazardKind.Barricade) continue;
-                    Vector3 p = h.DioramaLocal;
-                    if (Mathf.Abs(p.z - car.Z - barDz) > 1f) continue;
-                    int lane = Mathf.Clamp(Mathf.RoundToInt((p.x - roadOffsetAtZ(p.z)) / TrackGenerator.LaneWidth), -1, 1);
-                    shut[lane + 1] = true;
-                }
-                float bestLane = float.NaN;
-                for (int lane = -1; lane <= 1; lane++)
-                {
-                    if (shut[lane + 1]) continue;
-                    float x = lane * TrackGenerator.LaneWidth;
-                    if (float.IsNaN(bestLane) || Mathf.Abs(x - car.x) < Mathf.Abs(bestLane - car.x)) bestLane = x;
-                }
-                if (!float.IsNaN(bestLane)) desired = bestLane;
-                nearest = null;
-                barricadeAhead = true;
-            }
             // Dodge one tree at a time, nearest first, the way a player would.
             if (nearest != null)
             {
@@ -1530,7 +1560,7 @@ namespace LastLight
                 }
             }
             // Drive through coins when nothing else needs steering.
-            if (nearest == null && fork == null && !barricadeAhead && !track.OnCliffStretch(carS))
+            if (nearest == null && fork == null && !track.OnCliffStretch(carS))
             {
                 float coinDz = float.MaxValue;
                 foreach (var p in track.pickups)
@@ -1545,7 +1575,7 @@ namespace LastLight
             }
             // Steer clear of acid that's about to land or still wet, like a player would,
             // unless a fallen tree close ahead needs the steering first.
-            if ((nearest == null || nearestDz > 9f) && !barricadeAhead && track.TwinAt(carS) == null && track.TwinAt(carS + 8f) == null && shooterSystem.NearestThreat(carS, 16f, out float acidX))
+            if ((nearest == null || nearestDz > 9f) && !car.trapped && !autoEscaping && track.TwinAt(carS) == null && track.TwinAt(carS + 8f) == null && shooterSystem.NearestThreat(carS, 16f, out float acidX))
             {
                 float clear = ShooterSystem.PuddleRadius * 0.7f + Vehicle.HalfWidth + 0.7f;
                 // On a cliff road the limits reach past the edge, so dodge only within the road itself.
@@ -1567,6 +1597,20 @@ namespace LastLight
             if (autopilotMode == AutopilotMode.FallOffCliffs && track.OnCliffStretch(carS)) desired = 20f;
             i.setTarget = desired;
             return i;
+        }
+
+        /// <summary>A three-way split: the clear branch nearest the jeep; if all three are barricaded, the middle one.</summary>
+        int PickThreeWayBranch(Fork fork)
+        {
+            int best = Fork.Middle;
+            float bestCost = float.MaxValue;
+            foreach (int side in new[] { -1, Fork.Middle, 1 })
+            {
+                if (fork.Blocked(side)) continue;
+                float cost = Mathf.Abs(Fork.BranchX(side, 4f) - car.x);
+                if (cost < bestCost) { bestCost = cost; best = side; }
+            }
+            return best;
         }
 
         /// <summary>

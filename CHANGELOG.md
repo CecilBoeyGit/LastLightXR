@@ -4,6 +4,25 @@ Builds are release APKs for PICO Swan (Android, ARM64), package `com.lastlight.p
 Version history before git: 0.1.1 to 0.1.5 were built and installed but not committed, so the first
 commit holds the 0.1.6 source.
 
+## 0.1.13
+
+- Three-way splits replace the three-lane main road from 0.1.12, which is gone. From the medium stage a split can
+  open into three branches round two wooded islands, with barricades across some of them: one of the three until
+  650 m, usually two after that, and from 1 km often all three, so only a shovel, a shield or a crash gets through.
+- Shovel: now also smashes a split road's dead-end wall. The jeep carries on through the escape track at full
+  speed instead of crawling. It still smashes barricades, rocks and trees.
+- Powerup stares: 1 second at the start of a run, 0.05 s quicker every 150 m, never under 0.5 s (reached at 1.5 km).
+- Storm branches: more of them (every 1.9 s or so, down to 0.9 s late on), bigger, cartwheeling and hopping as they
+  go, and each is timed to cross the road on the disk just ahead of the jeep, with a whoosh. Before, they mostly
+  passed behind the jeep while still at the roadside.
+- Repair QTE: the wrench is about 40% smaller and sits lower, and the three dots appear closer round the jeep.
+- Rock hits: knocking a spitter down with a thrown rock pays 20 coins, with a gold "+20" rising over it.
+- Respawn cost: the first paid respawn in a run costs 100, the next 2x that (200), then 3x the last (600), then 4x
+  (2,400), 5x (12,000) and so on. The Angel Transponder's free respawn doesn't count toward the climb.
+- Fix: a jeep trapped at a dead-end wall right after a booster could get stuck for good, because the cancelled boost
+  eased it back off the wall where lining up with the gap no longer freed it. Lining up now frees it anywhere just
+  short of the wall.
+
 ## 0.1.12
 
 - Gaze timings: powerups still take 1.5 s of staring and stored items 1 s, but both now hold through a fifth of a
@@ -31,7 +50,7 @@ commit holds the 0.1.6 source.
 - Rhino APC starts every run (and respawn) with a shovel fitted, outside the compartment.
 - New vehicle, Angel Transponder (2,500 coins, the most expensive): an emergency medical van whose first respawn in
   each run is free.
-- Three-lane stretches from 300 m: dashed lane lines and a row of barricades. In the medium stage one lane is shut
+- Three-lane stretches from 300 m (removed again in 0.1.13): dashed lane lines and a row of barricades. In the medium stage one lane is shut
   (sometimes two); late on two is usual, with a small chance all three are. Barricades hit like trees.
 - Twin cliff roads from 600 m: two narrow strips over the abyss, one narrower than the other, joined halfway by a
   ridge where you can switch. The first is safe both ways; later ones usually have a strip that ends in a sheer
