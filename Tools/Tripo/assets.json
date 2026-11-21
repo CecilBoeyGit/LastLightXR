@@ -275,6 +275,50 @@
       "notes": "Floating-island garage diorama (turntable, workbench, corrugated roof, pines on a rock base) from Cecil's garage render. Generated on studio.tripo3d.ai (web credits only; the CLI must skip it). Run record in Tools/Tripo/runs/garage/web/web.json."
     },
     {
+      "id": "hauler_pickup",
+      "enabled": false,
+      "source": "web",
+      "category": "vehicle",
+      "prompt": null,
+      "input_images": { "front": "Tools/Tripo/inputs/hauler_pickup/hauler_pickup_reference.png" },
+      "model": "web: HD Model, H3.1 Best Quality, single image; Retopo triangle 4000 (Smart Mesh P1.0) -> 4335 tris",
+      "face_limit": 4000,
+      "texture_size": 2048,
+      "rig": false,
+      "animations": [],
+      "unity": {
+        "prefab": "LL_HaulerPickup",
+        "replaces_placeholder": "procedural HAULER PICKUP in Assets/LastLight/Scripts/VehicleCatalog.cs (not yet swapped)",
+        "max_texture_size": 1024,
+        "material": "LL_HaulerPickup.mat (LastLight/DioramaTextured, _BaseMap = Textures/LL_HaulerPickup_BaseColor.png, not clipped to the disk)",
+        "import": "Set by Assets/LastLight/Editor/SceneryModelSetup.cs: no rig, no animation, no imported materials",
+        "collider": "none (the vehicle's gameplay footprint stays in Vehicle.cs)"
+      },
+      "notes": "Teal off-road pickup with tan stripes, roll bar and long bed, from Cecil's vehicle sheet. Generated on studio.tripo3d.ai (web credits only; the CLI must skip it). Run record in Tools/Tripo/runs/hauler_pickup/web/web.json."
+    },
+    {
+      "id": "rhino_apc",
+      "enabled": false,
+      "source": "web",
+      "category": "vehicle",
+      "prompt": null,
+      "input_images": { "front": "Tools/Tripo/inputs/rhino_apc/rhino_apc_reference.png" },
+      "model": "web: HD Model, H3.1 Best Quality, single image; Retopo triangle 4000 (Smart Mesh P1.0) -> 4229 tris",
+      "face_limit": 4000,
+      "texture_size": 2048,
+      "rig": false,
+      "animations": [],
+      "unity": {
+        "prefab": "LL_RhinoAPC",
+        "replaces_placeholder": "procedural RHINO APC in Assets/LastLight/Scripts/VehicleCatalog.cs (not yet swapped)",
+        "max_texture_size": 1024,
+        "material": "LL_RhinoAPC.mat (LastLight/DioramaTextured, _BaseMap = Textures/LL_RhinoAPC_BaseColor.png, not clipped to the disk)",
+        "import": "Set by Assets/LastLight/Editor/SceneryModelSetup.cs: no rig, no animation, no imported materials",
+        "collider": "none (the vehicle's gameplay footprint stays in Vehicle.cs)"
+      },
+      "notes": "Dark red six-wheel armoured truck with orange chevrons, from Cecil's vehicle sheet. Generated on studio.tripo3d.ai (web credits only; the CLI must skip it). Run record in Tools/Tripo/runs/rhino_apc/web/web.json."
+    },
+    {
       "id": "pine_a",
       "enabled": true,
       "category": "foliage",
