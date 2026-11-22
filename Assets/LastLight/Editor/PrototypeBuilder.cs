@@ -178,21 +178,58 @@ namespace LastLight.EditorTools
                     ti.textureCompression = TextureImporterCompression.Compressed;
                     ti.SaveAndReimport();
                 }
-                var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
-                if (tex == null) Debug.LogWarning("[LastLight] Ground texture missing: " + path);
-                return tex;
+                return AssetDatabase.LoadAssetAtPath<Texture2D>(path);
             }
+            // The texture's average colour in linear space, read from the file itself (the imported one isn't readable).
+            Vector4 Mean(Texture2D tex)
+            {
+                if (tex == null) return new Vector4(0.5f, 0.5f, 0.5f, 1f);
+                var copy = new Texture2D(2, 2);
+                try
+                {
+                    if (!copy.LoadImage(File.ReadAllBytes(AssetDatabase.GetAssetPath(tex)))) return new Vector4(0.5f, 0.5f, 0.5f, 1f);
+                    var px = copy.GetPixels32();
+                    double r = 0, g = 0, b = 0;
+                    int n = 0;
+                    for (int i = 0; i < px.Length; i += 7)
+                    {
+                        Color lin = ((Color)px[i]).linear;
+                        r += lin.r; g += lin.g; b += lin.b; n++;
+                    }
+                    return new Vector4((float)(r / n), (float)(g / n), (float)(b / n), 1f);
+                }
+                finally { Object.DestroyImmediate(copy); }
+            }
+            Color Hex(string hex) { ColorUtility.TryParseHtmlString(hex, out var c); return c; }
+
             var road = Layer("Road");
             var dirt = Layer("Dirt");
             var grass = Layer("Grass");
+            // Cliff rock: its own texture when there is one, otherwise the dirt texture, which the rock colour recolours.
+            var rock = File.Exists($"{TerrainArtDir}/Rock.png") ? Layer("Rock") : dirt;
+            foreach (var (name, tex) in new[] { ("road", road), ("dirt", dirt), ("grass", grass) })
+                if (tex == null) Debug.LogWarning("[LastLight] Ground texture missing: " + name);
             return MakeMaterial("LL_Ground", "LastLight/Diorama", m =>
             {
                 m.SetFloat("_ClipToDisk", 1f);
                 m.SetTexture("_RoadMap", road);
                 m.SetTexture("_DirtMap", dirt);
                 m.SetTexture("_GrassMap", grass);
-                m.SetFloat("_GroundTile", 6f);      // divides the 12-unit chunk length, so chunk seams stay hidden
-                if (!m.HasProperty("_TexColor") || m.GetFloat("_TexColor") < 0f) m.SetFloat("_TexColor", 0f);
+                m.SetTexture("_RockMap", rock);
+                m.SetVector("_RoadMean", Mean(road));
+                m.SetVector("_DirtMean", Mean(dirt));
+                m.SetVector("_GrassMean", Mean(grass));
+                m.SetVector("_RockMean", Mean(rock));
+                // Target colours picked to sit with the Tripo props under the night light: warm packed earth for the road,
+                // darker trodden dirt on the verges, a mossy green floor and the boulders' grey-brown for cliffs.
+                m.SetColor("_RoadColor", Hex("#846443"));
+                m.SetColor("_DirtColor", Hex("#574130"));
+                m.SetColor("_GrassColor", Hex("#45623a"));
+                m.SetColor("_RockColor", Hex("#6b6154"));
+                m.SetFloat("_GroundTile", 6f);      // both tile sizes divide the 12-unit chunk length, so chunk seams stay hidden
+                m.SetFloat("_RockTile", 4f);
+                m.SetFloat("_Detail", 1f);
+                m.SetFloat("_BlendContrast", 0.3f);
                 bool on = road != null && dirt != null && grass != null;
                 m.SetFloat("_Ground", on ? 1f : 0f);
                 if (on) m.EnableKeyword("_LL_GROUND"); else m.DisableKeyword("_LL_GROUND");
@@ -1712,9 +1749,12 @@ namespace LastLight.EditorTools
             Check($"Spitters are the rigged Tripo model, lunging as the acid launches (spit clip weight {spitWeightAtLaunch:0.00} at launch)",
                 anySpitter && spittersUseModels && spitWeightAtLaunch > 0.8f);
             var groundRenderers = Object.FindObjectsByType<MeshRenderer>(FindObjectsSortMode.None).Where(r => r.name == "Terrain").ToList();
-            Check($"Road chunks use the textured road / dirt / grass ground ({groundRenderers.Count} chunks)",
-                groundRenderers.Count > 0 && groundRenderers.All(r => r.sharedMaterial != null && r.sharedMaterial.IsKeywordEnabled("_LL_GROUND")
-                    && r.sharedMaterial.GetTexture("_RoadMap") != null && r.sharedMaterial.GetTexture("_DirtMap") != null && r.sharedMaterial.GetTexture("_GrassMap") != null));
+            // Smooth means shared vertices: a flat-shaded grid would need a vertex per triangle corner.
+            bool groundSmooth = groundRenderers.All(r => { var mf = r.GetComponent<MeshFilter>(); return mf != null && mf.sharedMesh != null && mf.sharedMesh.vertexCount * 3 < mf.sharedMesh.GetIndexCount(0); });
+            Check($"Road chunks use the smooth ground blending road, dirt, grass and rock ({groundRenderers.Count} chunks)",
+                groundRenderers.Count > 0 && groundSmooth && groundRenderers.All(r => r.sharedMaterial != null && r.sharedMaterial.IsKeywordEnabled("_LL_GROUND")
+                    && r.sharedMaterial.GetTexture("_RoadMap") != null && r.sharedMaterial.GetTexture("_DirtMap") != null
+                    && r.sharedMaterial.GetTexture("_GrassMap") != null && r.sharedMaterial.GetTexture("_RockMap") != null));
             sb.AppendLine();
             sb.AppendLine($"Splits generated: {count("has a dead end")} with a dead end, {count("has an obstacle branch")} with an obstacle branch");
             sb.AppendLine($"Counts: coins {count("Coin collected")}, boosters {count("Booster collected")}, shields {count("Shield collected")}, flashlights {count("Flashlight collected")}, shield saves {count("Shield absorbed") + count("Shield stopped")}, scrapes {count("Scraping")}, sweeps {count("Swept boulder")}, damage events {count(", health ")}, splits {count("split:")}");

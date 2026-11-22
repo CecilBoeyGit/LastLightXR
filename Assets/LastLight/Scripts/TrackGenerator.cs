@@ -21,6 +21,7 @@ namespace LastLight
         public readonly List<ShooterZombie> shooters = new List<ShooterZombie>();
         public bool rockfallTriggered;
         public Mesh terrainMesh;
+        public Mesh sceneryMesh;    // edge posts, twin marks and fallback scenery, on the plain diorama material
         public readonly List<Mesh> propMeshes = new List<Mesh>();   // merged Tripo pines, rocks and grass
         public Transform puddles;                                     // shown while the road is wet
     }
@@ -96,10 +97,10 @@ namespace LastLight
         const float EscapeGapOffset = BranchHalfWidth - EscapeHalfWidth;
         const float MaxBranchOffset = 7.5f;
         const float SideExtent = 22f;
-        const float CellX = 1.1f;
-        const float CellZ = 1.2f;
         // Vertex-colour alpha on the terrain picks the ground shader's texture layer; 1 stays plain (stone, cliffs).
-        public const float LayerRoad = 0.25f, LayerDirt = 0.5f, LayerGrass = 0.75f;
+        // The smooth ground mesh: shared vertices on a finer grid (cells divide the 12-unit chunk exactly).
+        const float GroundCellX = 0.55f;
+        const float GroundCellZ = 0.6f;
         const float CarMargin = Vehicle.HalfWidth;
         const int DeadEndsFromChunk = 18;
         const int FirstCliffChunk = 30;
@@ -648,6 +649,7 @@ namespace LastLight
             foreach (var p in c.pickups) pickups.Remove(p);
             foreach (var z in c.shooters) shooters.Remove(z);
             if (c.terrainMesh != null) Object.DestroyImmediate(c.terrainMesh);
+            if (c.sceneryMesh != null) Object.DestroyImmediate(c.sceneryMesh);
             foreach (var m in c.propMeshes) if (m != null) Object.DestroyImmediate(m);
             if (c.root != null) Object.DestroyImmediate(c.root.gameObject);
         }
@@ -666,8 +668,9 @@ namespace LastLight
             go.transform.SetParent(parent, false);
             c.root = go.transform;
 
+            c.terrainMesh = BuildTerrainMesh(c);
+            MeshBuilder.Spawn("Terrain", c.root, c.terrainMesh, groundMat);
             var mb = new MeshBuilder();
-            BuildTerrain(mb, c);
             BuildEdgePosts(mb, c);
             if (c.type == ChunkType.Cliff) BuildTwinMarks(mb, c);
             var props = SceneryModels.Active;
@@ -676,8 +679,8 @@ namespace LastLight
             var grass = props != null && props.HasGrass ? new PropBatch(props.grassMesh) : null;
             BuildScenery(mb, c, rng, pines, rocks);
             if (grass != null) ScatterGrass(grass, c);
-            c.terrainMesh = mb.ToMesh($"LL_Chunk_{index}");
-            MeshBuilder.Spawn("Terrain", c.root, c.terrainMesh, groundMat);
+            c.sceneryMesh = mb.ToMesh($"LL_ChunkScenery_{index}");
+            MeshBuilder.Spawn("Scenery", c.root, c.sceneryMesh, terrainMat);
             SpawnProps(c, pines, props != null ? props.pineMaterial : null, "Pines");
             SpawnProps(c, rocks, props != null ? props.rockMaterial : null, "Rocks");
             SpawnProps(c, grass, props != null ? props.grassMaterial : null, "Grass");
@@ -812,45 +815,96 @@ namespace LastLight
             nextForkIndex = Mathf.Max(nextForkIndex, cliffUntilIndex + 2);
         }
 
-        void BuildTerrain(MeshBuilder mb, Chunk c)
+        /// <summary>
+        /// The chunk's ground as one smooth mesh: a grid of shared vertices on the road's height function, with normals
+        /// from neighbouring samples (one extra row and column all round, so they match across chunk joins). Each vertex
+        /// carries its layer blend in the colour: r road, g dirt verge, b rock (steep ground and the abyss), grass the
+        /// rest, a a slow brightness drift. On a material without the ground variant the colour is the blended palette
+        /// tone instead, so it still reads.
+        /// </summary>
+        Mesh BuildTerrainMesh(Chunk c)
         {
-            int nx = Mathf.CeilToInt(2f * SideExtent / CellX);
-            int nz = Mathf.CeilToInt(ChunkLength / CellZ);
-            float dz = ChunkLength / nz;
-            for (int iz = 0; iz < nz; iz++)
+            int nx = Mathf.CeilToInt(2f * SideExtent / GroundCellX);
+            int nz = Mathf.RoundToInt(ChunkLength / GroundCellZ);
+            float dx = 2f * SideExtent / nx, dz = ChunkLength / nz;
+            int w = nx + 3, d = nz + 3;     // samples with a one-cell border
+            var grid = new Vector3[w * d];
+            for (int iz = 0; iz < d; iz++)
+                for (int ix = 0; ix < w; ix++)
+                    grid[iz * w + ix] = P(c, -SideExtent + (ix - 1) * dx, (iz - 1) * dz);
+
+            bool layered = groundMat != null && groundMat.IsKeywordEnabled("_LL_GROUND");
+            int vw = nx + 1, vd = nz + 1;
+            var verts = new Vector3[vw * vd];
+            var norms = new Vector3[vw * vd];
+            var cols = new Color[vw * vd];
+            for (int iz = 0; iz < vd; iz++)
             {
-                for (int ix = 0; ix < nx; ix++)
+                for (int ix = 0; ix < vw; ix++)
                 {
-                    float x0 = -SideExtent + ix * CellX, x1 = x0 + CellX;
-                    float z0 = iz * dz, z1 = z0 + dz;
-                    Vector3 a = P(c, x0, z0), b = P(c, x0, z1), cc = P(c, x1, z1), d = P(c, x1, z0);
-                    float sc = c.startS + (z0 + z1) * 0.5f;
-                    float xc = ColumnToRoadX((x0 + x1) * 0.5f, sc);
-                    float hAvg = (a.y + b.y + cc.y + d.y) * 0.25f;
-                    float slope = Mathf.Max(Mathf.Abs(a.y - cc.y), Mathf.Abs(b.y - d.y));
-                    float dist = RoadDistance(xc, sc);
-                    Color col;
-                    float layer = 1f;
-                    if (dist < 0f)
-                    {
-                        float v = Mathf.PerlinNoise(xc * 0.7f, sc * 0.7f);
-                        col = Palette.Road * (0.88f + 0.22f * v);
-                        layer = LayerRoad;
-                    }
-                    else if (hAvg < -0.3f) col = Palette.Stone * (0.8f + 0.5f * Mathf.PerlinNoise(xc * 0.6f, sc * 0.6f));
-                    else if (dist < 0.9f) { col = Palette.RoadDark; layer = LayerDirt; }
-                    else if (slope > 1.4f) col = Palette.Cliff;
-                    else
-                    {
-                        float v = Mathf.PerlinNoise(xc * 0.35f + 5f, sc * 0.35f);
-                        col = Color.Lerp(Palette.FloorDark, Palette.Moss, v * 0.8f);
-                        if (hAvg > 4f) col = Color.Lerp(col, Palette.Rock, 0.4f);
-                        layer = LayerGrass;
-                    }
-                    col.a = layer;
-                    mb.Quad(a, b, cc, d, col);
+                    int g = (iz + 1) * w + (ix + 1);
+                    Vector3 p = grid[g];
+                    // Central differences across the neighbouring samples; forward (z) cross right (x) points up.
+                    Vector3 n = Vector3.Cross(grid[g + w] - grid[g - w], grid[g + 1] - grid[g - 1]).normalized;
+                    int v = iz * vw + ix;
+                    verts[v] = p;
+                    norms[v] = n;
+                    cols[v] = GroundBlend(c, -SideExtent + ix * dx, iz * dz, p.y, n, layered);
                 }
             }
+            var tris = new int[nx * nz * 6];
+            int t = 0;
+            for (int iz = 0; iz < nz; iz++)
+                for (int ix = 0; ix < nx; ix++)
+                {
+                    int a = iz * vw + ix, b = a + vw, cc = b + 1, e = a + 1;
+                    // Split each cell along the diagonal that follows the ground better (smaller height kink).
+                    if (Mathf.Abs(verts[a].y - verts[cc].y) <= Mathf.Abs(verts[b].y - verts[e].y))
+                    {
+                        tris[t++] = a; tris[t++] = b; tris[t++] = cc;
+                        tris[t++] = a; tris[t++] = cc; tris[t++] = e;
+                    }
+                    else
+                    {
+                        tris[t++] = a; tris[t++] = b; tris[t++] = e;
+                        tris[t++] = b; tris[t++] = cc; tris[t++] = e;
+                    }
+                }
+            var mesh = new Mesh { name = $"LL_Ground_{c.index}" };
+            mesh.vertices = verts;
+            mesh.normals = norms;
+            mesh.colors = cols;
+            mesh.triangles = tris;
+            mesh.RecalculateBounds();
+            return mesh;
+        }
+
+        /// <summary>Layer weights for one ground vertex (see BuildTerrainMesh), or its palette tone when not layered.</summary>
+        Color GroundBlend(Chunk c, float column, float z, float h, Vector3 n, bool layered)
+        {
+            float s = c.startS + z;
+            float xRel = ColumnToRoadX(column, s);
+            float dist = RoadDistance(xRel, s);
+            // Road with a soft edge, then a band of trodden dirt that frays into the grass in patches.
+            float road = 1f - Smooth(-0.35f, 0.15f, dist);
+            float fray = Mathf.PerlinNoise(xRel * 0.45f + 31f, s * 0.45f);
+            float verge = 1f - Smooth(0.5f + 0.6f * fray, 1.6f + 1.2f * fray, dist);
+            float patch = Smooth(0.62f, 0.78f, Mathf.PerlinNoise(xRel * 0.18f + 7f, s * 0.18f + 3f));   // bare earth in the forest
+            float dirt = Mathf.Max(verge, patch * 0.85f) * (1f - road);
+            // Rock on steep ground, down into the abyss, and showing through on the high hills.
+            float steep = Smooth(0.72f, 0.5f, n.y);
+            float abyss = Smooth(-0.25f, -1.2f, h);
+            float high = Smooth(3.2f, 6f, h) * 0.6f;
+            float rock = Mathf.Clamp01(Mathf.Max(Mathf.Max(steep, abyss), high)) * (1f - road);
+            dirt *= 1f - rock;
+            float shade = Mathf.PerlinNoise(xRel * 0.07f + 50f, s * 0.07f + 11f);
+            if (layered) return new Color(road, dirt, rock, shade);
+            float grass = Mathf.Clamp01(1f - road - dirt - rock);
+            Color forest = Color.Lerp(Palette.FloorDark, Palette.Moss, Mathf.PerlinNoise(xRel * 0.35f + 5f, s * 0.35f) * 0.8f);
+            Color col = Palette.Road * road + Palette.RoadDark * dirt + Palette.Cliff * rock + forest * grass;
+            col *= 0.88f + 0.24f * shade;
+            col.a = 1f;
+            return col;
         }
 
         Vector3 P(Chunk c, float xRel, float z)
