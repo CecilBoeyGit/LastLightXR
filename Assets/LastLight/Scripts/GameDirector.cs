@@ -962,7 +962,7 @@ namespace LastLight
 
         void TickGear(float dt)
         {
-            shovel.Tick(dt);
+            shovel.Tick(dt, head != null ? head.position : diorama.ToWorld(HeadLocal));
             ShooterZombie killed = turret.Tick(dt, time, track.shooters, car, fx, worldRoot, diorama, () => sound?.Play(sound.gun, 0.22f));
             if (killed != null) KillShooter(killed);
         }

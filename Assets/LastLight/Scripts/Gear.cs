@@ -251,7 +251,12 @@ namespace LastLight
         public const float MountAhead = 0.2f;
         /// <summary>How far the back of the Tripo plough tucks into the bumper, so it looks bolted on without reaching the body.</summary>
         const float Tuck = 0.06f;
-        readonly Transform[] pips = new Transform[MaxHits];
+        // A row of small round dots floating over the blade, turned to face the player: lit amber for each hit left,
+        // dark for each spent.
+        public const float DotSize = 0.3f, DotSpacing = 0.42f, DotsAbove = 0.42f;
+        static readonly Color DotLit = new Color(1f, 0.72f, 0.22f, 1f), DotSpent = new Color(0.22f, 0.22f, 0.22f, 0.9f);
+        readonly Transform dotsRoot;
+        readonly UISprite[] dots = new UISprite[MaxHits];
         float bump, pop;
 
         public Shovel(Transform mount, Material solidMat)
@@ -293,19 +298,19 @@ namespace LastLight
                 mb.Clear();
             }
 
-            // Five lamps on top of the blade count the hits left.
-            mb.Box(Vector3.zero, new Vector3(0.22f, 0.1f, 0.1f), Palette.BoostOrange * 2f);
-            Mesh pipMesh = mb.ToMesh("LL_ShovelPip");
+            // The hit dots sit just above the top of the blade, centred over it.
+            float bladeTop = model.Ready ? model.mesh.bounds.max.y - BladeRest.y : 0.53f;
+            float bladeZ = model.Ready ? -MountAhead - Tuck - BladeRest.z + model.mesh.bounds.size.z * 0.5f : 0f;
+            dotsRoot = new GameObject("Hit Dots").transform;
+            dotsRoot.SetParent(blade, false);
+            dotsRoot.localPosition = new Vector3(0f, bladeTop + DotsAbove, bladeZ);
+            UISprite.LoadMaterials(out Material dotMat, out _);
+            Texture2D dot = UISprite.Load("dot");
             for (int i = 0; i < MaxHits; i++)
             {
-                var pr = MeshBuilder.Spawn("Hit Lamp", blade, pipMesh, solidMat);
-                // On the Tripo plough they sit along the striped top edge of the blade, in front of the mounting brackets.
-                var mb0 = model.Ready ? model.mesh.bounds : default;
-                pr.transform.localPosition = model.Ready ? new Vector3((i - (MaxHits - 1) * 0.5f) * 0.36f, mb0.min.y + mb0.size.y * 0.66f - BladeRest.y,
-                                                             -MountAhead - Tuck - BladeRest.z + mb0.size.z * 0.62f)
-                                                         : Quaternion.Euler(-14f, 0f, 0f) * new Vector3((i - (MaxHits - 1) * 0.5f) * 0.36f, 0.53f, 0f);
-                if (!model.Ready) pr.transform.localRotation = Quaternion.Euler(-14f, 0f, 0f);
-                pips[i] = pr.transform;
+                var at = new Vector2((i - (MaxHits - 1) * 0.5f) * DotSpacing, 0f);
+                new UISprite("Hit Dot Ink", dotsRoot, dot, Vector2.one * DotSize, dotMat, 40) { Position = at, Color = Palette.UIInk };
+                dots[i] = new UISprite("Hit Dot", dotsRoot, dot, Vector2.one * DotSize * 0.68f, dotMat, 41) { Position = at, Color = DotLit };
             }
             root.gameObject.SetActive(false);
         }
@@ -317,7 +322,7 @@ namespace LastLight
             HitsLeft = MaxHits;
             if (!root.gameObject.activeSelf) pop = 0f;
             root.gameObject.SetActive(true);
-            for (int i = 0; i < MaxHits; i++) pips[i].gameObject.SetActive(true);
+            ShowHits();
         }
 
         public void Reset()
@@ -332,16 +337,31 @@ namespace LastLight
             if (HitsLeft <= 0) return false;
             HitsLeft--;
             bump = 1f;
-            for (int i = 0; i < MaxHits; i++) pips[i].gameObject.SetActive(i < HitsLeft);
+            ShowHits();
             if (HitsLeft > 0) return false;
             fx.Burst(debrisParent, debrisLocal, DebrisKind.Metal, 8, 1f, push, 1.2f);
             root.gameObject.SetActive(false);
             return true;
         }
 
-        public void Tick(float dt)
+        void ShowHits()
+        {
+            for (int i = 0; i < MaxHits; i++) dots[i].Color = i < HitsLeft ? DotLit : DotSpent;
+        }
+
+        /// <summary>How many of the hit dots are lit. For tests.</summary>
+        public int DotsLit
+        {
+            get { int n = 0; foreach (var d in dots) if (d.Color == DotLit) n++; return n; }
+        }
+        public Transform Dots => dotsRoot;
+
+        /// <param name="head">The player's head in world space; the hit dots turn to face it.</param>
+        public void Tick(float dt, Vector3 head)
         {
             if (!root.gameObject.activeSelf) return;
+            Vector3 face = dotsRoot.position - head;
+            if (face.sqrMagnitude > 1e-6f) dotsRoot.rotation = Quaternion.LookRotation(face, Vector3.up);
             pop = Mathf.Min(1f, pop + dt / 0.25f);
             bump = Mathf.Max(0f, bump - dt * 5f);
             root.localScale = new Vector3(Mathf.SmoothStep(0f, 1f, pop), 1f, 1f);

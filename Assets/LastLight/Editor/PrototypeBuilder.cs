@@ -1091,6 +1091,7 @@ namespace LastLight.EditorTools
             Render(cam, rt, headWorld, director.Rack.root.position, Path.Combine(outDir, "view_storage_rack_dwell.png"));
             LookAtRack(0, 0.28f);
             bool shovelUsed = director.Save.SlotItem(0) == null && director.FrontShovel.Active && director.FrontShovel.HitsLeft == Shovel.MaxHits;
+            bool shovelDotsFull = director.FrontShovel.DotsLit == Shovel.MaxHits;
             LookAtRack(0, 1.3f);
             bool emptySlotIgnored = director.EventLog.Skip(storeStart).Count(l => l.Contains("Used a stored")) == 1;
             LookAtRack(1, 0.65f);
@@ -1316,6 +1317,13 @@ namespace LastLight.EditorTools
                 wallT += dt;
             }
             Close("shovel_wall");
+            bool shovelDotsTrackHits = director.FrontShovel.Active && director.FrontShovel.HitsLeft < Shovel.MaxHits
+                && director.FrontShovel.DotsLit == director.FrontShovel.HitsLeft;
+            if (director.FrontShovel.Active)
+            {
+                Vector3 dotsAt = director.FrontShovel.Dots.position;
+                Render(cam, rt, dotsAt + d.rotation * new Vector3(0.03f, 0.06f, -0.13f), dotsAt, Path.Combine(outDir, "close_shovel_dots.png"));
+            }
             Hold(1.5f);
             var wallLog = director.EventLog.Skip(wallStart).ToList();
             int smashIdx = wallLog.FindIndex(l => l.Contains("Shovel smashed a dead-end wall"));
@@ -1434,7 +1442,7 @@ namespace LastLight.EditorTools
             });
             int throwStart = director.EventLog.Count;
             int bankBeforeThrow = director.Save.Coins, runCoinsBeforeThrow = director.Coins;
-            bool throwNotEarly = true;
+            bool throwNotEarly = true, rockIsBoulderModel = false, rockShot = false;
             if (throwTarget != null)
             {
                 for (float t = 0f; t < 2.5f && throwTarget.alive; t += dt)
@@ -1443,6 +1451,16 @@ namespace LastLight.EditorTools
                     director.Tick(dt);
                     if (t < 0.5f && director.Thrower.Thrown > 0) throwNotEarly = false;
                     if (director.Thrower.InFlight > 0) Shot("rock_throw");
+                    foreach (var rock in director.Thrower.RocksInFlight)
+                    {
+                        var mf = rock.GetComponent<MeshFilter>();
+                        if (mf != null && mf.sharedMesh == SceneryModels.Get(m => m.fallingBoulder).mesh) rockIsBoulderModel = true;
+                        if (!rockShot)
+                        {
+                            rockShot = true;
+                            Render(cam, rt, rock.position + d.rotation * new Vector3(0.05f, 0.04f, -0.08f), rock.position, Path.Combine(outDir, "close_thrown_rock.png"));
+                        }
+                    }
                 }
                 director.Scout.ScriptedWorldRay = null;
                 Hold(0.5f);
@@ -1833,6 +1851,8 @@ namespace LastLight.EditorTools
             Check($"The autopilot crosses twin cliff roads on the safe strip ({twinCrossings} crossed, survived {lateSurvived}, {lateDistance:0} m)", twinCrossings >= 1 && lateSurvived);
             Check("Switching across the ridge gets the jeep off a dead strip; riding it to the end drops into the abyss", tookDeadStrip && ridgeEscaped && deadEndDrops);
             Check("A second's stare at a spitter throws a rock that knocks it down", (object)throwTarget != null && throwNotEarly && rockThrown && rockKnockedDown);
+            Check("The thrown rock is the Tripo boulder model", RockThrower.UsesModel && rockIsBoulderModel);
+            Check("A row of dots over the shovel shows its hits: all lit when fitted, one fewer per hit", shovelDotsFull && shovelDotsTrackHits);
             Check($"Knocking a spitter down with a rock pays {GameDirector.RockHitCoins} coins", rockRewarded);
             {
                 var badgeKinds = new[] { PickupKind.Booster, PickupKind.Shovel, PickupKind.Turret, PickupKind.Shield, PickupKind.Flashlight, PickupKind.Repair };

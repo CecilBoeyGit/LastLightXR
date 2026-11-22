@@ -4,6 +4,13 @@ Builds are release APKs for PICO Swan (Android, ARM64), package `com.lastlight.p
 Version history before git: 0.1.1 to 0.1.5 were built and installed but not committed, so the first
 commit holds the 0.1.6 source.
 
+## 0.1.24
+
+- The rock thrown at spitters is now the Tripo boulder model (the round hand-painted boulder), shrunk to a throwing
+  stone, instead of the procedural rock.
+- Shovel hit dots: a row of five small round dots floats just above the blade, turned to face you. Each hit left is
+  a lit amber dot; each spent hit turns dark. They replace the small orange lamps on the blade's edge.
+
 ## 0.1.23
 
 - The loose rocks that hung under and round the island are gone; they floated, unattached, in every view.
