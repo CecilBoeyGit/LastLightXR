@@ -9,7 +9,7 @@ namespace LastLight
     /// </summary>
     public sealed class WristMenu
     {
-        public const float DwellSeconds = 1f;           // the same second as the storage compartment
+        public const float DwellSeconds = 1f;           // a full second, so a passing glance at the wrist never pauses
         public const float MetresPerUnit = 0.02f;       // the button is laid out in panel units, then sized to this
         public static readonly Vector2 ButtonSize = new Vector2(4f, 1f);   // 8 cm by 2 cm
         // Palm-to-head facing, as the cosine of the angle between the palm normal and the direction to the head.

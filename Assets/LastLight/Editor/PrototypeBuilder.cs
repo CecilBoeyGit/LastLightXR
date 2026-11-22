@@ -1811,6 +1811,12 @@ namespace LastLight.EditorTools
                 && StorageCatalog.Items.All(i => i == PickupKind.Repair || StorageCatalog.Price(i) < StorageCatalog.Price(PickupKind.Repair)));
             Check("Rhino starts every run with a shovel fitted, outside the compartment", rhinoShovel);
             Check("All four vehicles use their Tripo models, and the garage stage uses the Tripo garage", vehiclesUseModels && director.GarageUI.UsesGarageModel);
+            Vector3? discCentre = director.GarageUI.PlatformCentreWorld;
+            float pivotOffset = discCentre.HasValue
+                ? Vector2.Distance(new Vector2(discCentre.Value.x, discCentre.Value.z), new Vector2(director.GarageUI.TurntablePivotWorld.x, director.GarageUI.TurntablePivotWorld.z))
+                : float.MaxValue;
+            sb.AppendLine($"  info  Garage turntable: vehicle pivot {pivotOffset * 1000f:0.0} mm from the steel disc's centre");
+            Check("Garage vehicles spin round the centre of the steel turntable (pivot within 5 mm of the disc's centre)", pivotOffset < 0.005f);
             Check("Angel Transponder: the most expensive vehicle, first respawn in a run free, then the usual price", angelPricedTop && angelFirstFree && freeRespawned && secondCostsBase);
             Check($"Three-way splits from the medium stage: the autopilot takes a clear branch or the narrow gap without hitting a barricade ({threeWayTaken} taken, {threeWayClear} clear, {threeWayGapTaken} through a gap, {lateBarricadeHits} hits)",
                 threeWayTaken >= 2 && threeWayClear + threeWayGapTaken >= threeWayTaken && lateBarricadeHits == 0);

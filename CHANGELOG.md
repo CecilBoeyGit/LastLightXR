@@ -4,6 +4,22 @@ Builds are release APKs for PICO Swan (Android, ARM64), package `com.lastlight.p
 Version history before git: 0.1.1 to 0.1.5 were built and installed but not committed, so the first
 commit holds the 0.1.6 source.
 
+## 0.1.22
+
+Everything in 0.1.21, plus the Tripo work from `feature/tripo-props-wired`, which 0.1.21 was missing:
+
+- The new Scout Jeep made from its model sheet is the starting vehicle (vehicle slot 0), replacing the old
+  roll-cage jeep.
+- Garage: the turntable is a smooth steel disc, with the holes in the platform closed.
+- Fix: garage vehicles now spin round the centre of the turntable. The garage model is centred on its outline,
+  but its turntable sits about 1.25 units toward the open front, so every vehicle orbited off-centre.
+- The Tripo props are in the game: hazards, cliff rock, coins, gear and powerup pickups.
+- New Tripo roof turret, modelled on the turret icon.
+- The plough sits fully ahead of every vehicle's bumper without clipping.
+- Smoother, blended terrain with hand-painted textures to match the Tripo models.
+- Storage compartment items trigger after a 0.5 s stare instead of 1 s. The wrist MENU button still takes a
+  full second, so a passing glance never pauses the run.
+
 ## 0.1.21
 
 - Wrist MENU button: during a run, turn either palm towards your face and a small MENU button floats over that

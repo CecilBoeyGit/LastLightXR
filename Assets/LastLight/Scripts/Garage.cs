@@ -49,6 +49,7 @@ namespace LastLight
 
         readonly Progress progress;
         readonly Transform turntable;
+        readonly Transform platform;
         readonly MeshFilter stageVehicle, stageVehicleOld;
         readonly MeshRenderer stageRenderer, stageRendererOld, scanRing;
         readonly Material solidMat;
@@ -95,11 +96,19 @@ namespace LastLight
             // procedural garage with its light strips.
             var models = SceneryModels.Active;
             UsesGarageModel = models != null && models.HasGarage;
+            // Where the vehicle spins. The Tripo garage is centred on its outline, but its turntable sits off that centre
+            // (about 1.25 units toward the open front), so the pivot moves onto the steel disc's hub.
+            Vector3 hub = Vector3.zero;
             if (UsesGarageModel)
             {
                 var g = MeshBuilder.Spawn("Garage", stageRoot, models.garageMesh, models.garageMaterial);
                 g.transform.localPosition = new Vector3(0f, TurntableY + VehicleY, TurntableZ);
-                if (models.HasGaragePlatform) MeshBuilder.Spawn("Garage Platform", g.transform, models.garagePlatformMesh, models.garagePlatformMaterial);
+                if (models.HasGaragePlatform)
+                {
+                    platform = MeshBuilder.Spawn("Garage Platform", g.transform, models.garagePlatformMesh, models.garagePlatformMaterial).transform;
+                    hub = models.garagePlatformMesh.bounds.center;
+                    hub.y = 0f;
+                }
             }
             else
             {
@@ -109,7 +118,7 @@ namespace LastLight
 
             turntable = new GameObject("Turntable").transform;
             turntable.SetParent(stageRoot, false);
-            turntable.localPosition = new Vector3(0f, TurntableY, TurntableZ);
+            turntable.localPosition = new Vector3(hub.x, TurntableY, TurntableZ + hub.z);
             var mb = new MeshBuilder();
             mb.Cylinder(Vector3.zero, 4.4f, 0.22f, 32, Palette.Metal * 0.8f);
             mb.Ring(new Vector3(0f, 0.23f, 0f), 3.9f, 4.2f, 32, Palette.UIAmber * 0.9f);
@@ -253,6 +262,11 @@ namespace LastLight
         public Vector3 BackWorldCenter => back.root.position;
         public Vector3 SwatchWorldCenter(int i) => swatches[i].root.position;
         public Vector3 ScrollDownWorldCenter => down.root.position;
+        /// <summary>The point the display vehicle spins round, in world space.</summary>
+        public Vector3 TurntablePivotWorld => turntable.position;
+        /// <summary>The centre of the Tripo garage's steel turntable disc in world space, or null without it.</summary>
+        public Vector3? PlatformCentreWorld => platform != null
+            ? platform.TransformPoint(platform.GetComponent<MeshFilter>().sharedMesh.bounds.center) : (Vector3?)null;
         public Vector3 LookPoint => Vector3.Lerp(stageRoot.position, panelRoot.position, 0.5f);
         public Vector3 TraitsLookPoint => traits.root.position;
         public bool CardVisible(int i) => cards[i].button.Visible;
