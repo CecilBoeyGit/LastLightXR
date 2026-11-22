@@ -8,7 +8,7 @@ You can guide the Jeep toward one part of the road while looking at another. Tha
 
 Collect supplies and choose when to use them
 
-Hold your gaze on a coin to collect it. Powerups work the same way. A speed booster, a shovel, a roof turret, a shield, a flashlight and a repair kit can all be picked up by looking at them. Look at the dashboard when you want to use a stored item. Hold your gaze on its storage slot to put it to work. The dashboard is where you make that choice while the forest and the horde still demand your attention.
+Drive through coins to collect them. Powerups are different: you collect them with your eyes. A speed booster, a shovel, a roof turret, a shield, a flashlight and a repair kit can all be picked up by looking at them. Look at the dashboard when you want to use a stored item. Hold your gaze on its storage slot to put it to work. The dashboard is where you make that choice while the forest and the horde still demand your attention.
 
 A branch blocked by a barricade can become a route if you have a shovel to smash through it. A speed booster can help when you want to put more distance between the Jeep and the horde. The flashlight is another tool for dealing with the dark.
 
@@ -24,7 +24,7 @@ The round diorama keeps the run in view as the path bends, splits and heads deep
 
 Make the garage your own
 
-Between runs, the floating garage gives your vehicle its own turntable. The Scout Jeep is the vehicle you start with. Reach 800 metres to unlock the Hauler Pickup, 1,500 metres for the Rhino APC and 3,000 metres for the Angel Transponder. Each milestone gives you a distance to aim for, even as the road leading there changes from run to run.
+Between runs, the floating garage gives your vehicle its own turntable. The Scout Jeep is the vehicle you start with. Save up coins and reach 800 metres to unlock the Hauler Pickup, 1,500 metres for the Rhino APC and 3,000 metres for the Angel Transponder. Each milestone gives you a distance to aim for, even as the road leading there changes from run to run.
 
 Spend coins in the garage on upgrades. Pick a paint colour for your vehicle or add storage slots to carry more items on the dashboard. There are four traits to upgrade. Visibility, Controls, Evasion and Recovery let you choose which part of your setup to work on first. The coins you collect on the road, including the ones you earn by targeting acid-spitting zombies, feed back into those garage choices.
 
