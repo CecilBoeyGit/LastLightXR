@@ -1489,6 +1489,107 @@ namespace LastLight.EditorTools
             director.Scout.ScriptedWorldRay = null;
             stats.AppendLine($"Gaze sweep: {aboveHorizonFrames} frames looking above the horizon, longest freeze {longestFrozen} frames, lowest light {minIntensity:0.00}");
 
+            // ----- Wrist MENU button: shows while a palm faces the head; a second's look opens the pause menu -----
+            director.Restart();
+            director.Car.invulnerable = 1e6f;
+            Hold(0.3f);
+            Vector3 headPosBefore = director.head.position;
+            Quaternion headRotBefore = director.head.rotation;
+            director.head.position = headWorld;
+            director.head.LookAt(d.position);
+            Vector3 headFwd = director.head.forward, headRight = director.head.right;
+            Vector3 leftWristAt = headWorld + headFwd * 0.32f - Vector3.up * 0.16f - headRight * 0.12f;
+            Vector3 rightWristAt = headWorld + headFwd * 0.32f - Vector3.up * 0.16f + headRight * 0.12f;
+            HandFrame Palm(Vector3 at, bool facing, bool pinching = false)
+            {
+                Vector3 toHead = (headWorld - at).normalized;
+                return new HandFrame
+                {
+                    tracked = true, palm = at, pinchPoint = at, pinching = pinching, pinchDistance = pinching ? 0.01f : 0.05f,
+                    palmNormal = facing ? toHead : -toHead, handForward = Vector3.up, wrist = at - Vector3.up * 0.04f
+                };
+            }
+            void LookAtWrist(int hand, float seconds)
+            {
+                director.Scout.ScriptedWorldRay = new Ray(headWorld, director.WristButtons.ButtonWorldCenter(hand) - headWorld);
+                Hold(seconds);
+            }
+            void LookAway(float seconds)
+            {
+                director.Scout.ScriptedWorldRay = new Ray(headWorld, d.TransformPoint(new Vector3(0f, 0f, 10f)) - headWorld);
+                Hold(seconds);
+            }
+            director.ScriptedLeftHand = Palm(leftWristAt, false);
+            director.ScriptedRightHand = Palm(rightWristAt, false);
+            Hold(0.2f);
+            bool wristHiddenPalmAway = !director.WristButtons.AnyShown;
+            director.ScriptedLeftHand = Palm(leftWristAt, true);
+            director.ScriptedRightHand = Palm(rightWristAt, true);
+            Hold(0.2f);
+            bool wristBothShown = director.WristButtons.Shown(0) && director.WristButtons.Shown(1);
+            float wristToLeftHand = Vector3.Distance(director.WristButtons.ButtonWorldCenter(0), leftWristAt);
+            bool wristNearWrist = wristToLeftHand < 0.12f;
+            director.ScriptedRightHand = Palm(rightWristAt, true, true);
+            Hold(0.1f);
+            bool wristHidesWhilePinching = !director.WristButtons.Shown(1) && director.WristButtons.Shown(0);
+            director.ScriptedRightHand = Palm(rightWristAt, true);
+            Hold(0.2f);
+            LookAtWrist(0, 0.5f);
+            bool wristFilling = director.WristButtons.Gazed(0) && director.WristButtons.Progress(0) > 0.3f && director.State == RunState.Running;
+            Render(cam, rt, headWorld, director.WristButtons.ButtonWorldCenter(0), Path.Combine(outDir, "view_wrist_menu.png"));
+            LookAway(0.5f);
+            bool wristGlanceResets = director.WristButtons.Progress(0) == 0f && director.State == RunState.Running;
+            LookAtWrist(1, 0.6f);
+            bool wristNotEarly = director.State == RunState.Running;
+            LookAtWrist(1, 0.5f);
+            bool pauseOpened = director.State == RunState.PauseMenu && director.PauseUI.Visible && !director.WristButtons.AnyShown;
+            float pausedAt = director.Distance;
+            Hold(1.5f);
+            bool runFrozen = director.State == RunState.PauseMenu && Mathf.Approximately(director.Distance, pausedAt);
+            bool dashHiddenForPause = !director.Gauges.Visible;
+            Render(cam, rt, headWorld, director.PauseUI.root.position, Path.Combine(outDir, "view_pause_menu.png"));
+            void LookAtPause(int button, float seconds)
+            {
+                director.Scout.ScriptedWorldRay = new Ray(headWorld, director.PauseUI.ButtonWorldCenter(button) - headWorld);
+                Hold(seconds);
+            }
+            LookAtPause(PauseMenuPanel.ResumeIndex, 0.4f);
+            bool resumeFocused = director.PauseUI.Focused == PauseMenuPanel.ResumeIndex;
+            Render(cam, rt, headWorld, director.PauseUI.root.position, Path.Combine(outDir, "view_pause_menu_resume.png"));
+            Press();
+            bool resumed = director.State == RunState.Running && !director.PauseUI.Visible;
+            Hold(0.5f);
+            bool runsAfterResume = director.Distance > pausedAt + 0.5f;
+            bool dashBackAfterResume = director.Gauges.Visible;
+            director.OpenPauseMenuNow();
+            Hold(0.5f);
+            LookAtPause(PauseMenuPanel.RestartIndex, 0.4f);
+            int restartLog = director.EventLog.Count;
+            Press();
+            bool restarted = !director.PauseUI.Visible && director.Distance < 0.5f
+                && (director.State == RunState.Running || director.State == RunState.Tutorial)
+                && director.EventLog.Skip(restartLog).Any(l => l.Contains("Restart pressed"));
+            if (director.State != RunState.Running) director.Restart();
+            if (director.State == RunState.Tutorial) { Press(); }
+            Hold(0.3f);
+            director.OpenPauseMenuNow();
+            Hold(0.1f);
+            LookAtPause(PauseMenuPanel.MainMenuIndex, 0.2f);
+            Press();
+            bool pinchTooSoonIgnored = director.State == RunState.PauseMenu;
+            Hold(0.3f);
+            Press();
+            bool backToMenu = director.State == RunState.Menu && !director.PauseUI.Visible && !director.WristButtons.AnyShown;
+            Hold(0.2f);
+            bool wristOnlyInRuns = !director.WristButtons.AnyShown;
+            director.ScriptedLeftHand = null;
+            director.ScriptedRightHand = null;
+            director.Scout.ScriptedWorldRay = null;
+            director.head.SetPositionAndRotation(headPosBefore, headRotBefore);
+            stats.AppendLine($"Wrist menu: hidden palm away {wristHiddenPalmAway}, both shown {wristBothShown} ({wristToLeftHand:0.000} m from the wrist), pinch hides {wristHidesWhilePinching}, filling {wristFilling}, glance resets {wristGlanceResets}, not early {wristNotEarly}, opened {pauseOpened}, frozen {runFrozen}; pause: resume focused {resumeFocused}, resumed {resumed}, runs again {runsAfterResume}, restart {restarted}, early pinch ignored {pinchTooSoonIgnored}, main menu {backToMenu}, wrist only in runs {wristOnlyInRuns}");
+            if (director.State != RunState.Running) director.Restart();
+            if (director.State == RunState.Tutorial) { Press(); }
+
             var log = director.EventLog;
             System.Func<string, int> count = key => log.Count(l => l.Contains(key));
 
@@ -1699,6 +1800,10 @@ namespace LastLight.EditorTools
             Check($"Evasion level 2 shrugs off some crashes ({evaded} evaded, {damaged} damaged)", evasionMaxed && evaded > 0 && damaged > 0 && Mathf.Approximately(TraitCatalog.EvasionChance(1), 0.15f) && Mathf.Approximately(TraitCatalog.EvasionChance(2), 0.4f));
             Check("Each run gets a fresh random seed and a different road (fixed seed off)", roadsRandom);
             Check("Horde walkers are the rigged Tripo runner", director.Crowd.UsesModels);
+            Check("Wrist MENU button shows on either wrist while that palm faces the head, and hides when it turns away or pinches", wristHiddenPalmAway && wristBothShown && wristNearWrist && wristHidesWhilePinching);
+            Check("A second's look at the wrist button opens the pause menu (it fills as you look; a glance away resets it)", wristFilling && wristGlanceResets && wristNotEarly && pauseOpened);
+            Check("The pause menu freezes the run, and Resume carries on", runFrozen && dashHiddenForPause && resumeFocused && resumed && runsAfterResume && dashBackAfterResume);
+            Check("Pause menu: Restart starts a fresh run, Main Menu returns to the title, a too-early pinch is ignored", restarted && pinchTooSoonIgnored && backToMenu && wristOnlyInRuns);
             {
                 var propRenderers = Object.FindObjectsByType<MeshRenderer>(FindObjectsSortMode.None);
                 int pineChunks = propRenderers.Count(r => r.name == "Pines" && r.sharedMaterial != null && r.sharedMaterial.name == "LL_Pine");

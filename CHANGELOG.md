@@ -4,6 +4,19 @@ Builds are release APKs for PICO Swan (Android, ARM64), package `com.lastlight.p
 Version history before git: 0.1.1 to 0.1.5 were built and installed but not committed, so the first
 commit holds the 0.1.6 source.
 
+## 0.1.21
+
+- Wrist MENU button: during a run, turn either palm towards your face and a small MENU button floats over that
+  wrist, like checking a watch. It shows on both wrists if both palms face you, and hides when the palm turns away
+  or that hand pinches. Look at it for a second (it fills left to right as you look; glancing away resets it) to
+  pause. It's a look rather than a pinch because pinching during a run grabs the steering beacon.
+- Pause menu: the run freezes and a PAUSED panel floats up in front of you, following your head like the run-over
+  panel, showing the distance and coins so far. Look at a button and pinch, as on the main menu: Resume carries on,
+  Restart starts a fresh run, Main Menu goes back to the title. The dashboard steps aside while it's open, and the
+  music drops to its paused level. A pinch in the first third of a second after it opens is ignored.
+- Editor and controllers: Escape or Tab opens the pause menu (Escape again resumes); a controller's menu button
+  does the same.
+
 ## 0.1.20
 
 - Snow and ice only rolls in after 1,600 m; before that the weather is fog or storm.

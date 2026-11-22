@@ -235,4 +235,61 @@ namespace LastLight
             return true;
         }
     }
+
+    /// <summary>
+    /// Keeps a floating panel in front of the player's head, lazily: it holds its place until the head turns
+    /// past a dead zone, then glides smoothly back in front and settles. Used by the run-over and pause panels.
+    /// </summary>
+    public sealed class HeadFollow
+    {
+        public float Distance = 0.62f;              // metres in front of the head, nearer than the disk's far side
+        const float DeadZoneDegrees = 16f;          // head turns smaller than this leave the panel where it is
+        const float SettleDegrees = 3f;
+        const float FollowRate = 3.2f;              // exponential catch-up rate while moving
+        // How far the panel may sit below or above eye level. Kept shallow so it floats above the disk,
+        // where the terrain can't cover it, even when the player is looking down at the road.
+        const float MaxDown = 16f, MaxUp = 10f;
+        Vector3 worldPos;
+        bool moving, placed;
+
+        public void Reset() => placed = false;
+
+        public void Follow(Transform panel, Transform head, float dt, bool snap)
+        {
+            if (head == null) return;
+            Vector3 fwd = head.forward;
+            float pitch = Mathf.Clamp(-Mathf.Asin(Mathf.Clamp(fwd.y, -1f, 1f)) * Mathf.Rad2Deg, -MaxUp, MaxDown);
+            Vector3 flat = new Vector3(fwd.x, 0f, fwd.z);
+            if (flat.sqrMagnitude < 1e-4f) flat = head.up; // looking straight down: use the head's up as forward
+            flat.y = 0f;
+            Quaternion yaw = Quaternion.LookRotation(flat.normalized, Vector3.up);
+            Vector3 dir = yaw * Quaternion.Euler(pitch, 0f, 0f) * Vector3.forward;
+            Vector3 target = head.position + dir * Distance;
+
+            if (snap || !placed)
+            {
+                worldPos = target;
+                placed = true;
+                moving = false;
+            }
+            else
+            {
+                Vector3 current = (worldPos - head.position).normalized;
+                float off = Vector3.Angle(current, dir);
+                if (off > DeadZoneDegrees) moving = true;
+                if (moving)
+                {
+                    worldPos = Vector3.Lerp(worldPos, target, 1f - Mathf.Exp(-FollowRate * dt));
+                    if (off < SettleDegrees) moving = false;
+                }
+                // Hold the distance steady even while the head moves.
+                Vector3 toPanel = worldPos - head.position;
+                worldPos = head.position + toPanel.normalized * Mathf.Lerp(toPanel.magnitude, Distance, 1f - Mathf.Exp(-4f * dt));
+            }
+            panel.position = worldPos;
+            Vector3 face = worldPos - head.position;
+            if (face.sqrMagnitude > 1e-6f)
+                panel.rotation = Quaternion.Slerp(panel.rotation, Quaternion.LookRotation(face, Vector3.up), snap ? 1f : 1f - Mathf.Exp(-8f * dt));
+        }
+    }
 }

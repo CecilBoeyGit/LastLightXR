@@ -15,6 +15,8 @@ namespace LastLight
         public bool pinching;
         public bool open;
         public Vector3 velocity;       // palm velocity, smoothed
+        public Vector3 wrist;          // wrist joint
+        public Vector3 handForward;    // from the wrist toward the fingers
     }
 
     /// <summary>
@@ -81,6 +83,8 @@ namespace LastLight
             var f = new HandFrame { tracked = true };
             f.palm = palm.position;
             f.palmNormal = palm.rotation * Vector3.down;
+            f.handForward = palm.rotation * Vector3.forward;
+            f.wrist = TryJoint(hand, XRHandJointID.Wrist, out Pose wrist) ? wrist.position : f.palm - f.handForward * 0.04f;
 
             TryJoint(hand, XRHandJointID.ThumbTip, out Pose thumb);
             TryJoint(hand, XRHandJointID.IndexTip, out Pose index);

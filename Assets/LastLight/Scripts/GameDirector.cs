@@ -6,7 +6,7 @@ using UnityEngine.XR.Hands;
 
 namespace LastLight
 {
-    public enum RunState { Running, Paused, GameOver, Menu, Tutorial, Garage }
+    public enum RunState { Running, Paused, GameOver, Menu, Tutorial, Garage, PauseMenu }
 
     /// <summary>How the test autopilot drives. Normal plays well; the others deliberately exercise failure paths.</summary>
     public enum AutopilotMode { Normal, NoSteering, TakeDeadEnds, EscapeDeadEnds, FallOffCliffs, IgnorePowerups, TwinDeadStrip, TwinRidgeEscape }
@@ -134,6 +134,8 @@ namespace LastLight
         public StartMenu Menu => menu;
         public TutorialPanel Tutorial => tutorial;
         public GameOverPanel GameOverUI => gameOverPanel;
+        public PauseMenuPanel PauseUI => pauseMenu;
+        public WristMenu WristButtons => wristMenu;
         public Garage GarageUI => garage;
         public Progress Save => progress;
         public ShooterSystem Shooters => shooterSystem;
@@ -219,7 +221,7 @@ namespace LastLight
         bool recentered;
         bool handEverSeen;
         IntentFrame pendingIntents;
-        bool gripWas, buttonWas, triggerWas, stickWas;
+        bool gripWas, buttonWas, triggerWas, stickWas, menuButtonWas;
         StartMenu menu;
         TutorialPanel tutorial;
         Transform uiRoot;
@@ -238,6 +240,12 @@ namespace LastLight
         Shovel shovel;
         Progress progress;
         GameOverPanel gameOverPanel;
+        PauseMenuPanel pauseMenu;
+        WristMenu wristMenu;
+        float pauseMenuTime;
+        PauseChoice pendingPauseChoice;
+        bool pendingPauseToggle;
+        const float PauseMenuInputDelay = 0.35f;    // a pinch already under way when the menu opens doesn't press anything
         Garage garage;
         float gameOverTime;
         int respawnsThisRun, shownBank;
@@ -301,6 +309,7 @@ namespace LastLight
             }
             // The run-over panel lazily follows the head, after the camera has moved this frame.
             if (gameOverPanel.Visible) gameOverPanel.Follow(head, Time.deltaTime, false);
+            if (pauseMenu.Visible) pauseMenu.Follow(head, Time.deltaTime, false);
         }
 
         public void Boot()
@@ -426,6 +435,7 @@ namespace LastLight
             menu.Visible = false;
             tutorial.Visible = false;
             gameOverPanel.Visible = false;
+            pauseMenu.Visible = false;
             State = RunState.Running;
             ApplyTraits();
             Log($"Run {runIndex} started, seed {runSeed}, driving {VehicleCatalog.All[car.Model].name}");
@@ -445,6 +455,7 @@ namespace LastLight
             State = RunState.Menu;
             tutorial.Visible = false;
             gameOverPanel.Visible = false;
+            pauseMenu.Visible = false;
             garage.Visible = false;
             worldRoot.gameObject.SetActive(true);
             menu.Visible = true;
@@ -530,6 +541,8 @@ namespace LastLight
             rack?.Reset();
             sound?.SetRain(0f);
             gameOverPanel.Visible = false;
+            pauseMenu.Visible = false;
+            wristMenu.Hide();
             respawnsThisRun = 0;
             acidGrace = 0f;
             Distance = 0f;
@@ -603,6 +616,15 @@ namespace LastLight
                 if (reacquire > 0.4f) { State = RunState.Running; reacquire = 0f; Log("Resumed"); }
             }
 
+            // The wrist MENU button shows during a run whenever a palm faces the head; a second's look at it pauses.
+            Vector3 headWorld = head != null ? head.position : diorama.ToWorld(HeadLocal);
+            int wristPressed = wristMenu.Tick(dt, left, right, headWorld, WorldGazeRay(), State == RunState.Running);
+            if (wristPressed >= 0) OpenPauseMenu(wristPressed == 0 ? "left wrist" : "right wrist");
+            else if (pendingPauseToggle && State == RunState.Running) OpenPauseMenu("menu key");
+            else if (State == RunState.PauseMenu) TickPauseMenu(dt, select);
+            pendingPauseToggle = false;
+            pendingPauseChoice = PauseChoice.None;
+
             bool running = State == RunState.Running;
             Ray? gazeLocal = scout.TryGetLocalRay(out Vector3 gro, out Vector3 grd) ? new Ray(gro, grd) : (Ray?)null;
             interventions.GazeArmSuppressed = qte.WantsGaze;
@@ -631,7 +653,7 @@ namespace LastLight
             car.Tick(running ? dt : 0f, CurrentTargetSpeed(running), time, boostTimer > 0f, slope);
             horde.Tick(Gap, time, running, track, Distance);
             TickWeather(dt, running);
-            scout.ShowOrb = !(State == RunState.Running || State == RunState.Paused || State == RunState.GameOver);
+            scout.ShowOrb = !(State == RunState.Running || State == RunState.Paused || State == RunState.PauseMenu || State == RunState.GameOver);
             scout.Tick(running ? dt : dt * 0.25f, track.hazards, !xr);
             TickStorage(dt, running);
             TickPickups(running ? dt : 0f);
@@ -803,6 +825,50 @@ namespace LastLight
             else if (action != GarageAction.None) sound?.Play(sound.commit, 0.7f);
             if (action == GarageAction.Back) CloseGarage();
         }
+
+        /// <summary>Freezes the run behind the pause menu, which floats up in front of the player.</summary>
+        void OpenPauseMenu(string from)
+        {
+            State = RunState.PauseMenu;
+            pauseMenuTime = 0f;
+            wristMenu.Hide();
+            pauseMenu.SetContent(Distance, Coins);
+            pauseMenu.Visible = true;
+            pauseMenu.Follow(head, 0f, true);
+            sound?.Play(sound.commit, 0.7f);
+            Log($"Pause menu opened from the {from}");
+        }
+
+        /// <summary>The pause menu: look and pinch Resume, Restart or Main Menu.</summary>
+        void TickPauseMenu(float dt, bool select)
+        {
+            pauseMenuTime += dt;
+            bool accept = pauseMenuTime >= PauseMenuInputDelay;
+            PauseChoice choice = pauseMenu.Tick(dt, WorldGazeRay(), select, accept);
+            if (pendingPauseChoice != PauseChoice.None) choice = pendingPauseChoice;
+            switch (choice)
+            {
+                case PauseChoice.Resume:
+                    sound?.Play(sound.commit);
+                    pauseMenu.Visible = false;
+                    State = RunState.Running;
+                    Log("Resume pressed");
+                    break;
+                case PauseChoice.Restart:
+                    sound?.Play(sound.commit);
+                    Log("Restart pressed");
+                    Restart();
+                    break;
+                case PauseChoice.MainMenu:
+                    sound?.Play(sound.commit);
+                    Log("Main Menu pressed from the pause menu");
+                    ReturnToMenu();
+                    break;
+            }
+        }
+
+        /// <summary>Opens the pause menu as the wrist button would. For tests and other inputs.</summary>
+        public void OpenPauseMenuNow() { if (State == RunState.Running) OpenPauseMenu("test"); }
 
         /// <summary>The run-over panel: shown once the crash has played out, then Retry, Respawn or Main Menu.</summary>
         void TickGameOver(float dt, bool select)
@@ -1463,6 +1529,12 @@ namespace LastLight
                 if (kb.escapeKey.wasPressedThisFrame || kb.backspaceKey.wasPressedThisFrame) pendingBack = true;
             }
             if (kb.cKey.wasPressedThisFrame) recentered = false;
+            // Escape or Tab opens the pause menu during a run; in the menu, Escape resumes.
+            if (kb.escapeKey.wasPressedThisFrame || kb.tabKey.wasPressedThisFrame)
+            {
+                if (State == RunState.Running) pendingPauseToggle = true;
+                else if (State == RunState.PauseMenu) pendingPauseChoice = PauseChoice.Resume;
+            }
             if (kb.pKey.wasPressedThisFrame && (State == RunState.Running || State == RunState.Paused))
                 State = State == RunState.Paused ? RunState.Running : RunState.Paused;
             // Menu: Enter starts, H opens How to Play. Tutorial: Enter or Space skips.
@@ -1494,7 +1566,7 @@ namespace LastLight
         void ReadControllers()
         {
             float stickX = 0f, stickY = 0f;
-            bool grip = false, button = false, trigger = false;
+            bool grip = false, button = false, trigger = false, menuButton = false;
             foreach (var node in new[] { XRNode.LeftHand, XRNode.RightHand })
             {
                 var dev = InputDevices.GetDeviceAtXRNode(node);
@@ -1507,13 +1579,20 @@ namespace LastLight
                 if (dev.TryGetFeatureValue(UnityEngine.XR.CommonUsages.gripButton, out bool g) && g) grip = true;
                 if (dev.TryGetFeatureValue(UnityEngine.XR.CommonUsages.primaryButton, out bool b) && b) button = true;
                 if (dev.TryGetFeatureValue(UnityEngine.XR.CommonUsages.triggerButton, out bool tr) && tr) trigger = true;
+                if (dev.TryGetFeatureValue(UnityEngine.XR.CommonUsages.menuButton, out bool mb) && mb) menuButton = true;
             }
             if (Mathf.Abs(stickX) > 0.2f) pendingIntents.steer = stickX;
             if (grip && !gripWas) pendingIntents.sweep = true;
             // Trigger or primary button acts like a pinch on every panel. On the run-over panel with nothing
             // focused, the primary button still retries, as before.
             bool press = (trigger && !triggerWas) || (button && !buttonWas);
-            if (press && (State == RunState.Menu || State == RunState.Tutorial || State == RunState.Garage)) pendingSelect = true;
+            if (press && (State == RunState.Menu || State == RunState.Tutorial || State == RunState.Garage || State == RunState.PauseMenu)) pendingSelect = true;
+            // A controller's menu button opens the pause menu, or resumes from it.
+            if (menuButton && !menuButtonWas)
+            {
+                if (State == RunState.Running) pendingPauseToggle = true;
+                else if (State == RunState.PauseMenu) pendingPauseChoice = PauseChoice.Resume;
+            }
             if (press && State == RunState.GameOver && gameOverPanel.Visible)
             {
                 if (gameOverPanel.Focused >= 0) pendingSelect = true;
@@ -1522,7 +1601,7 @@ namespace LastLight
             // The stick scrolls the garage list.
             if (State == RunState.Garage && Mathf.Abs(stickY) > 0.6f && !stickWas) pendingGarageScroll = stickY > 0f ? -1 : 1;
             stickWas = Mathf.Abs(stickY) > 0.6f;
-            gripWas = grip; buttonWas = button; triggerWas = trigger;
+            gripWas = grip; buttonWas = button; triggerWas = trigger; menuButtonWas = menuButton;
         }
 
         IntentFrame Autopilot(float dt)
@@ -1766,6 +1845,8 @@ namespace LastLight
             menu = new StartMenu(uiRoot, alphaMat, addMat) { Visible = false };
             tutorial = new TutorialPanel(uiRoot, alphaMat, addMat) { Visible = false };
             gameOverPanel = new GameOverPanel(diorama.transform, alphaMat, addMat);
+            pauseMenu = new PauseMenuPanel(diorama.transform, alphaMat, addMat);
+            wristMenu = new WristMenu(diorama.transform, alphaMat, addMat);
             garage = new Garage(diorama.transform, baseMaterial, glowMaterial, alphaMat, addMat, progress, HeadLocal);
         }
 
@@ -1786,7 +1867,8 @@ namespace LastLight
 
         void UpdateHud(float dt)
         {
-            bool show = State != RunState.Menu && State != RunState.Tutorial && State != RunState.Garage;
+            // The dash always draws on top, so it steps aside while the pause menu (which shows distance and coins) is open.
+            bool show = State != RunState.Menu && State != RunState.Tutorial && State != RunState.Garage && State != RunState.PauseMenu;
             gauges.Visible = show;
             rack.Visible = show;
             if (!show) return;
