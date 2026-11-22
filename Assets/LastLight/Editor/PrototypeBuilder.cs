@@ -37,6 +37,7 @@ namespace LastLight.EditorTools
             ConfigureUITextures();
             ZombieModelSetup.Configure();   // Tripo horde runner and spitter, loaded from Resources at runtime
             SceneryModelSetup.Configure();  // Tripo pine, boulder and grass tuft, merged into road chunks at runtime
+            PropModelSetup.Configure();     // Tripo hazards, cliff rock, coin and gear, baked into the same asset
 
             var scene = EditorSceneManager.OpenScene(TemplateScene, OpenSceneMode.Single);
 
@@ -1745,6 +1746,20 @@ namespace LastLight.EditorTools
                     .Sum(r => { var mf = r.GetComponent<MeshFilter>(); return mf != null && mf.sharedMesh != null ? (int)mf.sharedMesh.GetIndexCount(0) / 3 : 0; });
                 Check($"Pines, rocks and grass tufts are the Tripo models ({pineChunks}/{rockChunks}/{grassChunks} chunks, {tris} prop triangles loaded)",
                     pineChunks > 0 && rockChunks > 0 && grassChunks > 0);
+            }
+            {
+                var sm = SceneryModels.Load();
+                bool baked = sm != null && new[] { sm.branch, sm.fallingBoulder, sm.barricade, sm.fallenLog, sm.wideTree, sm.cliffRock, sm.coin, sm.turret, sm.shovel }.All(m => m.Ready);
+                var tripoHazardMats = new System.Collections.Generic.HashSet<string> { "LL_StormBranch", "LL_FallingBoulder", "LL_RoadBarricade", "LL_FallenLog", "LL_FallenTreeWide" };
+                string MatName(Component c) { var r = c.GetComponentInChildren<MeshRenderer>(true); return r != null && r.sharedMaterial != null ? r.sharedMaterial.name : ""; }
+                var hz = Object.FindObjectsByType<Hazard>(FindObjectsSortMode.None).Where(h => h.kind != HazardKind.DeadEnd).ToList();
+                int tripoHazards = hz.Count(h => tripoHazardMats.Contains(MatName(h)));
+                var coins = Object.FindObjectsByType<Pickup>(FindObjectsInactive.Include, FindObjectsSortMode.None).Where(p => p.kind == PickupKind.Coin).ToList();
+                var filters = Object.FindObjectsByType<MeshFilter>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+                bool gear = filters.Any(f => f.name == "Turret Model") && filters.Any(f => f.name == "Blade Model");
+                int cliffChunks = filters.Count(f => f.name == "Cliff Rocks");
+                Check($"Hazards, coins, cliff rocks and the turret and plough are the Tripo props ({tripoHazards}/{hz.Count} hazards, {coins.Count} coins, {cliffChunks} cliff rock chunks)",
+                    baked && tripoHazards == hz.Count && coins.All(p => MatName(p) == "LL_Coin") && gear);
             }
             Check($"Spitters are the rigged Tripo model, lunging as the acid launches (spit clip weight {spitWeightAtLaunch:0.00} at launch)",
                 anySpitter && spittersUseModels && spitWeightAtLaunch > 0.8f);

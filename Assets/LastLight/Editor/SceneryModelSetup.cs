@@ -26,7 +26,7 @@ namespace LastLight.EditorTools
         /// <summary>Models placed whole (garage, vehicles) rather than merged into road chunks.</summary>
         internal static bool IsWhole(string path) =>
             path.Contains("/Tripo/garage/") || path.Contains("/Tripo/hauler_pickup/") || path.Contains("/Tripo/rhino_apc/") || path.Contains("/Tripo/angel_transponder/")
-            || path.Contains("/Tripo/jeep/");
+            || path.Contains("/Tripo/jeep/") || path.Contains("/Tripo/scout_jeep/");
 
         static bool InScenery(string path)
         {
@@ -84,6 +84,7 @@ namespace LastLight.EditorTools
             ("rhino_apc", "LL_RhinoAPC"),
             ("angel_transponder", "LL_AngelTransponder"),
             ("jeep", "LL_Jeep"),
+            ("scout_jeep", "LL_ScoutJeep"),   // imported by PropModelPostprocessor
         };
 
         /// <summary>
@@ -93,7 +94,8 @@ namespace LastLight.EditorTools
         /// </summary>
         static readonly System.Collections.Generic.Dictionary<string, (int slot, float roll, float yaw)> Vehicles = new System.Collections.Generic.Dictionary<string, (int, float, float)>
         {
-            { "LL_Jeep", (0, -90f, 180f) },         // exported on its side (roof along +Z) and facing backwards
+            // The Scout Jeep, made from its model sheet, replaces the first jeep (LL_Jeep, now material only) in the starter slot.
+            { "LL_ScoutJeep", (0, 0f, 0f) },
             { "LL_HaulerPickup", (1, 0f, 0f) },
             { "LL_RhinoAPC", (2, 0f, 180f) },        // exported facing backwards
             { "LL_AngelTransponder", (3, 0f, 0f) },

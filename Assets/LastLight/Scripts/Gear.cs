@@ -39,29 +39,45 @@ namespace LastLight
             root = new GameObject("Turret").transform;
             root.SetParent(mount, false);
 
-            mb.Box(new Vector3(0f, 0.08f, 0f), new Vector3(0.62f, 0.16f, 0.62f), Palette.Metal);
-            mb.Box(new Vector3(0f, 0.2f, 0f), new Vector3(0.3f, 0.12f, 0.3f), Palette.Metal * 0.8f);
-            MeshBuilder.Spawn("Turret Base", root, mb.ToMesh("LL_TurretBase"), solidMat);
-            mb.Clear();
+            // The Tripo turret is one piece, so it turns whole on the yaw pivot and only the muzzle pitches.
+            var model = SceneryModels.Get(m => m.turret);
+            if (!model.Ready)
+            {
+                mb.Box(new Vector3(0f, 0.08f, 0f), new Vector3(0.62f, 0.16f, 0.62f), Palette.Metal);
+                mb.Box(new Vector3(0f, 0.2f, 0f), new Vector3(0.3f, 0.12f, 0.3f), Palette.Metal * 0.8f);
+                MeshBuilder.Spawn("Turret Base", root, mb.ToMesh("LL_TurretBase"), solidMat);
+                mb.Clear();
+            }
 
             yawPivot = new GameObject("Turret Yaw").transform;
             yawPivot.SetParent(root, false);
             yawPivot.localPosition = new Vector3(0f, 0.36f, 0f);
-            mb.Box(new Vector3(0f, 0f, -0.04f), new Vector3(0.5f, 0.3f, 0.56f), Palette.Metal * 1.15f);
-            mb.Box(new Vector3(0f, 0.17f, -0.04f), new Vector3(0.4f, 0.05f, 0.4f), Palette.TurretRed);
-            mb.Box(new Vector3(-0.3f, 0f, 0f), new Vector3(0.08f, 0.36f, 0.4f), Palette.Metal * 0.7f); // shield plates
-            mb.Box(new Vector3(0.3f, 0f, 0f), new Vector3(0.08f, 0.36f, 0.4f), Palette.Metal * 0.7f);
-            MeshBuilder.Spawn("Turret Head", yawPivot, mb.ToMesh("LL_TurretHead"), solidMat);
-            mb.Clear();
+            if (model.Ready)
+            {
+                var m = MeshBuilder.Spawn("Turret Model", yawPivot, model.mesh, model.material);
+                m.transform.localPosition = new Vector3(0f, -0.36f, 0f);
+            }
+            else
+            {
+                mb.Box(new Vector3(0f, 0f, -0.04f), new Vector3(0.5f, 0.3f, 0.56f), Palette.Metal * 1.15f);
+                mb.Box(new Vector3(0f, 0.17f, -0.04f), new Vector3(0.4f, 0.05f, 0.4f), Palette.TurretRed);
+                mb.Box(new Vector3(-0.3f, 0f, 0f), new Vector3(0.08f, 0.36f, 0.4f), Palette.Metal * 0.7f); // shield plates
+                mb.Box(new Vector3(0.3f, 0f, 0f), new Vector3(0.08f, 0.36f, 0.4f), Palette.Metal * 0.7f);
+                MeshBuilder.Spawn("Turret Head", yawPivot, mb.ToMesh("LL_TurretHead"), solidMat);
+                mb.Clear();
+            }
 
             pitchPivot = new GameObject("Turret Pitch").transform;
             pitchPivot.SetParent(yawPivot, false);
             pitchPivot.localPosition = new Vector3(0f, 0.02f, 0.2f);
-            mb.Box(new Vector3(-0.07f, 0f, 0.4f), new Vector3(0.07f, 0.07f, 0.8f), Palette.Tyre);
-            mb.Box(new Vector3(0.07f, 0f, 0.4f), new Vector3(0.07f, 0.07f, 0.8f), Palette.Tyre);
-            mb.Box(new Vector3(0f, 0f, 0.1f), new Vector3(0.24f, 0.14f, 0.22f), Palette.Metal);
-            MeshBuilder.Spawn("Turret Barrels", pitchPivot, mb.ToMesh("LL_TurretBarrels"), solidMat);
-            mb.Clear();
+            if (!model.Ready)
+            {
+                mb.Box(new Vector3(-0.07f, 0f, 0.4f), new Vector3(0.07f, 0.07f, 0.8f), Palette.Tyre);
+                mb.Box(new Vector3(0.07f, 0f, 0.4f), new Vector3(0.07f, 0.07f, 0.8f), Palette.Tyre);
+                mb.Box(new Vector3(0f, 0f, 0.1f), new Vector3(0.24f, 0.14f, 0.22f), Palette.Metal);
+                MeshBuilder.Spawn("Turret Barrels", pitchPivot, mb.ToMesh("LL_TurretBarrels"), solidMat);
+                mb.Clear();
+            }
 
             muzzle = new GameObject("Muzzle").transform;
             muzzle.SetParent(pitchPivot, false);
@@ -227,6 +243,9 @@ namespace LastLight
         public Transform Root => root;
 
         readonly Transform root, blade;
+        static readonly Vector3 BladeRest = new Vector3(0f, 0.5f, 0.15f);
+        /// <summary>How far ahead of the mount the front of the procedural blade reaches.</summary>
+        const float FrontZ = 0.3f;
         readonly Transform[] pips = new Transform[MaxHits];
         float bump, pop;
 
@@ -235,23 +254,38 @@ namespace LastLight
             root = new GameObject("Shovel").transform;
             root.SetParent(mount, false);
             var mb = new MeshBuilder();
-            // Arms from the bumper to the blade.
-            mb.Box(new Vector3(-0.45f, 0.42f, -0.15f), new Vector3(0.12f, 0.12f, 0.5f), Palette.Metal);
-            mb.Box(new Vector3(0.45f, 0.42f, -0.15f), new Vector3(0.12f, 0.12f, 0.5f), Palette.Metal);
-            MeshBuilder.Spawn("Shovel Arms", root, mb.ToMesh("LL_ShovelArms"), solidMat);
-            mb.Clear();
+            var model = SceneryModels.Get(m => m.shovel);
+            if (!model.Ready)
+            {
+                // Arms from the bumper to the blade.
+                mb.Box(new Vector3(-0.45f, 0.42f, -0.15f), new Vector3(0.12f, 0.12f, 0.5f), Palette.Metal);
+                mb.Box(new Vector3(0.45f, 0.42f, -0.15f), new Vector3(0.12f, 0.12f, 0.5f), Palette.Metal);
+                MeshBuilder.Spawn("Shovel Arms", root, mb.ToMesh("LL_ShovelArms"), solidMat);
+                mb.Clear();
+            }
 
             blade = new GameObject("Shovel Blade").transform;
             blade.SetParent(root, false);
-            blade.localPosition = new Vector3(0f, 0.5f, 0.15f);
-            blade.localRotation = Quaternion.Euler(-14f, 0f, 0f);
-            mb.Box(Vector3.zero, new Vector3(HalfWidth * 2f, 0.95f, 0.12f), Palette.ShovelSteel);
-            mb.Box(new Vector3(0f, -0.42f, 0.08f), new Vector3(HalfWidth * 2f + 0.06f, 0.14f, 0.1f), Palette.ShovelSteel * 1.25f); // cutting edge
-            mb.Box(new Vector3(0f, 0.36f, 0.07f), new Vector3(HalfWidth * 2f, 0.12f, 0.04f), Palette.ShovelYellow);
-            mb.Box(new Vector3(-HalfWidth, 0f, -0.04f), new Vector3(0.1f, 0.95f, 0.25f), Palette.Metal); // side plates
-            mb.Box(new Vector3(HalfWidth, 0f, -0.04f), new Vector3(0.1f, 0.95f, 0.25f), Palette.Metal);
-            MeshBuilder.Spawn("Blade", blade, mb.ToMesh("LL_ShovelBlade"), solidMat);
-            mb.Clear();
+            blade.localPosition = BladeRest;
+            if (model.Ready)
+            {
+                // The Tripo plough (blade and arms in one, 2.6 wide, facing +Z) with its front edge where the procedural blade's is.
+                var m = MeshBuilder.Spawn("Blade Model", blade, model.mesh, model.material);
+                m.transform.localPosition = new Vector3(0f, -BladeRest.y, FrontZ - BladeRest.z - model.mesh.bounds.max.z);
+            }
+            else
+            {
+                var tilted = new GameObject("Blade Tilt").transform;
+                tilted.SetParent(blade, false);
+                tilted.localRotation = Quaternion.Euler(-14f, 0f, 0f);
+                mb.Box(Vector3.zero, new Vector3(HalfWidth * 2f, 0.95f, 0.12f), Palette.ShovelSteel);
+                mb.Box(new Vector3(0f, -0.42f, 0.08f), new Vector3(HalfWidth * 2f + 0.06f, 0.14f, 0.1f), Palette.ShovelSteel * 1.25f); // cutting edge
+                mb.Box(new Vector3(0f, 0.36f, 0.07f), new Vector3(HalfWidth * 2f, 0.12f, 0.04f), Palette.ShovelYellow);
+                mb.Box(new Vector3(-HalfWidth, 0f, -0.04f), new Vector3(0.1f, 0.95f, 0.25f), Palette.Metal); // side plates
+                mb.Box(new Vector3(HalfWidth, 0f, -0.04f), new Vector3(0.1f, 0.95f, 0.25f), Palette.Metal);
+                MeshBuilder.Spawn("Blade", tilted, mb.ToMesh("LL_ShovelBlade"), solidMat);
+                mb.Clear();
+            }
 
             // Five lamps on top of the blade count the hits left.
             mb.Box(Vector3.zero, new Vector3(0.22f, 0.1f, 0.1f), Palette.BoostOrange * 2f);
@@ -259,7 +293,9 @@ namespace LastLight
             for (int i = 0; i < MaxHits; i++)
             {
                 var pr = MeshBuilder.Spawn("Hit Lamp", blade, pipMesh, solidMat);
-                pr.transform.localPosition = new Vector3((i - (MaxHits - 1) * 0.5f) * 0.36f, 0.53f, 0f);
+                pr.transform.localPosition = model.Ready ? new Vector3((i - (MaxHits - 1) * 0.5f) * 0.36f, model.mesh.bounds.max.y - BladeRest.y + 0.06f, FrontZ - BladeRest.z - 0.2f)
+                                                         : Quaternion.Euler(-14f, 0f, 0f) * new Vector3((i - (MaxHits - 1) * 0.5f) * 0.36f, 0.53f, 0f);
+                if (!model.Ready) pr.transform.localRotation = Quaternion.Euler(-14f, 0f, 0f);
                 pips[i] = pr.transform;
             }
             root.gameObject.SetActive(false);
@@ -300,7 +336,7 @@ namespace LastLight
             pop = Mathf.Min(1f, pop + dt / 0.25f);
             bump = Mathf.Max(0f, bump - dt * 5f);
             root.localScale = new Vector3(Mathf.SmoothStep(0f, 1f, pop), 1f, 1f);
-            blade.localPosition = new Vector3(0f, 0.5f, 0.15f - bump * 0.18f);
+            blade.localPosition = BladeRest - new Vector3(0f, 0f, bump * 0.18f);
         }
     }
 }

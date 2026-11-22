@@ -36,7 +36,7 @@ Material:
     - _ScanWidth: 0.3
     - _ScanY: 0
     - _SnowCover: 1
-    - _UseVertexColor: 0
+    - _UseVertexColor: 1
     m_Colors:
     - _Paint: {r: 1, g: 1, b: 1, a: 0}
     - _ScanColor: {r: 0.34999996, g: 0.9, b: 1, a: 1}

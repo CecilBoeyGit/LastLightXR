@@ -29,7 +29,7 @@ Material:
         m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
-    - _ClipToDisk: 1
+    - _ClipToDisk: 0
     - _Emission: 0
     - _Fade: 1
     - _ScanMode: 0

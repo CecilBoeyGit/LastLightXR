@@ -1729,14 +1729,31 @@ namespace LastLight
             mb.Cylinder(new Vector3(0f, -1.4f, 0f), r, 1.4f, 48, Palette.Earth, -1f, false);
             mb.Cylinder(new Vector3(0f, -7.5f, 0f), r * 0.25f, 6.1f, 14, Palette.Stone, r * 0.98f, false);
             var rng = new System.Random(3);
+            // The rocks hanging under the island show through cliff drops, so they use the Tripo cliff rock when it is baked.
+            var cliff = SceneryModels.Get(m => m.cliffRock);
+            var rocks = cliff.Ready ? new PropBatch(cliff.mesh) : null;
             for (int i = 0; i < 26; i++)
             {
                 float a = (float)rng.NextDouble() * Mathf.PI * 2f;
                 float rad = r * (0.55f + (float)rng.NextDouble() * 0.4f);
                 float y = -2.5f - (float)rng.NextDouble() * 4f * (1f - rad / r + 0.3f);
-                mb.Rock(new Vector3(Mathf.Cos(a) * rad, y, Mathf.Sin(a) * rad), 1f + (float)rng.NextDouble() * 1.5f, rng.Next(), Palette.Stone * 1.2f);
+                float size = 1f + (float)rng.NextDouble() * 1.5f;
+                int seed = rng.Next();
+                var at = new Vector3(Mathf.Cos(a) * rad, y, Mathf.Sin(a) * rad);
+                if (rocks == null) { mb.Rock(at, size, seed, Palette.Stone * 1.2f); continue; }
+                var turn = new System.Random(seed);
+                float h = size * 1.9f, shade = 0.7f + (float)turn.NextDouble() * 0.25f;
+                var tilt = Quaternion.Euler((float)(turn.NextDouble() - 0.5) * 40f, (float)turn.NextDouble() * 360f, 180f + (float)(turn.NextDouble() - 0.5) * 40f);
+                rocks.Add(at + Vector3.up * h * 0.5f, h, size * 1.6f, tilt, new Color(shade, shade * 0.97f, shade * 0.94f, 1f));   // hung point down
             }
             MeshBuilder.Spawn("Island Base", diorama.transform, mb.ToMesh("LL_IslandBase"), baseMaterial);
+            if (rocks != null)
+            {
+                // Like the base, not clipped to the disk.
+                var mat = new Material(cliff.material) { name = "LL_CliffRock_Island" };
+                mat.SetFloat("_ClipToDisk", 0f);
+                MeshBuilder.Spawn("Island Rocks", diorama.transform, rocks.ToMesh("LL_IslandRocks"), mat);
+            }
         }
 
         void BuildHud()
