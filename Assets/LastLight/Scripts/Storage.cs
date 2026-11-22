@@ -10,7 +10,7 @@ namespace LastLight
     public static class StorageCatalog
     {
         public const int MaxSlots = 4;
-        public const float UseSeconds = 1f;
+        public const float UseSeconds = 0.5f;
 
         /// <summary>Items the garage sells, in shop order.</summary>
         public static readonly PickupKind[] Items = { PickupKind.Shovel, PickupKind.Booster, PickupKind.Turret, PickupKind.Flashlight, PickupKind.Repair };
@@ -115,7 +115,7 @@ namespace LastLight
             new Label(root, "Title", "STORAGE", 1.05f, TextAnchor.MiddleLeft, ivory, new Vector2(-5.3f, PanelHeight * 0.5f - 1.35f), 22);
             new UISprite("Coin", root, UISprite.Load("coin"), new Vector2(0.9f, 0.9f), alphaMat, 3) { Position = new Vector2(2.7f, PanelHeight * 0.5f - 1.3f) };
             coinCount = new Label(root, "Coins", "0", 0.6f, TextAnchor.MiddleLeft, ivory, new Vector2(3.25f, PanelHeight * 0.5f - 1.27f));
-            new Label(root, "Slots Caption", "COMPARTMENT  -  LOOK AT AN ITEM FOR 1 S IN A RUN TO USE IT", 0.3f, TextAnchor.MiddleLeft, amber, new Vector2(-5.3f, SlotY + 2.0f), 22);
+            new Label(root, "Slots Caption", "COMPARTMENT  -  LOOK AT AN ITEM FOR 0.5 S IN A RUN TO USE IT", 0.3f, TextAnchor.MiddleLeft, amber, new Vector2(-5.3f, SlotY + 2.0f), 22);
 
             Texture2D lockTex = UISprite.Load("lock"), coinTex = UISprite.Load("coin");
             for (int i = 0; i < slots.Length; i++)

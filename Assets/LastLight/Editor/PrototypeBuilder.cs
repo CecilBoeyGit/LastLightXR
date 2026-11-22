@@ -37,6 +37,7 @@ namespace LastLight.EditorTools
             ConfigureUITextures();
             ZombieModelSetup.Configure();   // Tripo horde runner and spitter, loaded from Resources at runtime
             SceneryModelSetup.Configure();  // Tripo pine, boulder and grass tuft, merged into road chunks at runtime
+            PropModelSetup.Configure();     // Tripo hazards, cliff rock, coin and gear, baked into the same asset
 
             var scene = EditorSceneManager.OpenScene(TemplateScene, OpenSceneMode.Single);
 
@@ -178,21 +179,58 @@ namespace LastLight.EditorTools
                     ti.textureCompression = TextureImporterCompression.Compressed;
                     ti.SaveAndReimport();
                 }
-                var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
-                if (tex == null) Debug.LogWarning("[LastLight] Ground texture missing: " + path);
-                return tex;
+                return AssetDatabase.LoadAssetAtPath<Texture2D>(path);
             }
+            // The texture's average colour in linear space, read from the file itself (the imported one isn't readable).
+            Vector4 Mean(Texture2D tex)
+            {
+                if (tex == null) return new Vector4(0.5f, 0.5f, 0.5f, 1f);
+                var copy = new Texture2D(2, 2);
+                try
+                {
+                    if (!copy.LoadImage(File.ReadAllBytes(AssetDatabase.GetAssetPath(tex)))) return new Vector4(0.5f, 0.5f, 0.5f, 1f);
+                    var px = copy.GetPixels32();
+                    double r = 0, g = 0, b = 0;
+                    int n = 0;
+                    for (int i = 0; i < px.Length; i += 7)
+                    {
+                        Color lin = ((Color)px[i]).linear;
+                        r += lin.r; g += lin.g; b += lin.b; n++;
+                    }
+                    return new Vector4((float)(r / n), (float)(g / n), (float)(b / n), 1f);
+                }
+                finally { Object.DestroyImmediate(copy); }
+            }
+            Color Hex(string hex) { ColorUtility.TryParseHtmlString(hex, out var c); return c; }
+
             var road = Layer("Road");
             var dirt = Layer("Dirt");
             var grass = Layer("Grass");
+            // Cliff rock: its own texture when there is one, otherwise the dirt texture, which the rock colour recolours.
+            var rock = File.Exists($"{TerrainArtDir}/Rock.png") ? Layer("Rock") : dirt;
+            foreach (var (name, tex) in new[] { ("road", road), ("dirt", dirt), ("grass", grass) })
+                if (tex == null) Debug.LogWarning("[LastLight] Ground texture missing: " + name);
             return MakeMaterial("LL_Ground", "LastLight/Diorama", m =>
             {
                 m.SetFloat("_ClipToDisk", 1f);
                 m.SetTexture("_RoadMap", road);
                 m.SetTexture("_DirtMap", dirt);
                 m.SetTexture("_GrassMap", grass);
-                m.SetFloat("_GroundTile", 6f);      // divides the 12-unit chunk length, so chunk seams stay hidden
-                if (!m.HasProperty("_TexColor") || m.GetFloat("_TexColor") < 0f) m.SetFloat("_TexColor", 0f);
+                m.SetTexture("_RockMap", rock);
+                m.SetVector("_RoadMean", Mean(road));
+                m.SetVector("_DirtMean", Mean(dirt));
+                m.SetVector("_GrassMean", Mean(grass));
+                m.SetVector("_RockMean", Mean(rock));
+                // Target colours picked to sit with the Tripo props under the night light: warm packed earth for the road,
+                // darker trodden dirt on the verges, a mossy green floor and the boulders' grey-brown for cliffs.
+                m.SetColor("_RoadColor", Hex("#846443"));
+                m.SetColor("_DirtColor", Hex("#574130"));
+                m.SetColor("_GrassColor", Hex("#45623a"));
+                m.SetColor("_RockColor", Hex("#6b6154"));
+                m.SetFloat("_GroundTile", 6f);      // both tile sizes divide the 12-unit chunk length, so chunk seams stay hidden
+                m.SetFloat("_RockTile", 4f);
+                m.SetFloat("_Detail", 1f);
+                m.SetFloat("_BlendContrast", 0.3f);
                 bool on = road != null && dirt != null && grass != null;
                 m.SetFloat("_Ground", on ? 1f : 0f);
                 if (on) m.EnableKeyword("_LL_GROUND"); else m.DisableKeyword("_LL_GROUND");
@@ -1037,7 +1075,7 @@ namespace LastLight.EditorTools
             director.ScriptedRightHand = null;
             stats.AppendLine($"Beacon: grabbed {beaconGrabbed}, follows {beaconFollows} ({beaconToPinch:0.000}), returns {beaconReturns}; far pinch ignored {farPinchIgnored}, not armed early {notArmedYet}, armed {gazeArmed}, gaze grabbed {gazeGrabbed}, flew {flewToPinch}, steers {steersAfterFly}");
 
-            // ----- Storage compartment in a run: a second's look uses an item, as if its powerup were collected -----
+            // ----- Storage compartment in a run: a half-second look uses an item, as if its powerup were collected -----
             director.Restart();
             director.Car.invulnerable = 1e6f;
             Hold(0.5f);
@@ -1047,23 +1085,23 @@ namespace LastLight.EditorTools
                 Hold(seconds);
             }
             int storeStart = director.EventLog.Count;
-            LookAtRack(0, 0.6f);
+            LookAtRack(0, 0.3f);
             bool countdownShown = director.Rack.FillVisible(0) && director.Rack.FillOnTop(0);
             bool notUsedEarly = director.Save.SlotItem(0) == PickupKind.Shovel && !director.FrontShovel.Active;
             Render(cam, rt, headWorld, director.Rack.root.position, Path.Combine(outDir, "view_storage_rack_dwell.png"));
-            LookAtRack(0, 0.55f);
+            LookAtRack(0, 0.28f);
             bool shovelUsed = director.Save.SlotItem(0) == null && director.FrontShovel.Active && director.FrontShovel.HitsLeft == Shovel.MaxHits;
             LookAtRack(0, 1.3f);
             bool emptySlotIgnored = director.EventLog.Skip(storeStart).Count(l => l.Contains("Used a stored")) == 1;
-            LookAtRack(1, 1.15f);
+            LookAtRack(1, 0.65f);
             bool stacked = director.Turret.Active && director.FrontShovel.Active && director.Save.SlotItem(1) == null;
             director.GrantPowerup(PickupKind.Booster);
             Hold(2f);
             float boostBefore = director.BoostTime;
-            LookAtRack(2, 1.15f);
+            LookAtRack(2, 0.65f);
             bool boostReplaced = director.BoostTime > boostBefore + 1.5f && director.EventLog.Skip(storeStart).Any(l => l.Contains("stored speed boost") && l.Contains("replaced"));
             director.Car.health = 2;
-            LookAtRack(3, 1.15f);
+            LookAtRack(3, 0.65f);
             bool storedRepair = director.Car.health == 3 && director.Save.SlotItem(3) == null;
             bool rackInDash = director.Rack.root.parent == director.Gauges.root && director.Rack.root.localPosition.x > 3f;
             director.Scout.ScriptedWorldRay = null;
@@ -1699,7 +1737,7 @@ namespace LastLight.EditorTools
             Check("Storage starts with one free slot; slots unlock in order for coins", oneFreeSlot && outOfOrderRefused && slotsUnlocked);
             Check("A 4th storage slot can only be bought once a second vehicle is owned", fourthBarred && fourthAfterVehicle && fourthSlotBought);
             Check("Items bought in the garage fill empty slots; a full compartment refuses", itemsStored && fullRefused);
-            Check("A 1 s look at a stored item uses it, with a radial countdown fill drawn above the badge; empty slots ignore the gaze", notUsedEarly && countdownShown && shovelUsed && emptySlotIgnored);
+            Check($"A {StorageCatalog.UseSeconds:0.0} s look at a stored item uses it, with a radial countdown fill drawn above the badge; empty slots ignore the gaze", notUsedEarly && countdownShown && shovelUsed && emptySlotIgnored);
             Check("Different powerups stack; the same one replaces the equipped one", stacked && boostReplaced);
             Check("Fog smothers the scout light; the weather dial shows fog", fogBlocks);
             Check("A flashlight cuts through the fog", flashlightCutsFog);
@@ -1756,7 +1794,7 @@ namespace LastLight.EditorTools
                 bool stepsDown = true;
                 for (float dd = 0f; dd < 3000f; dd += 10f) if (Pickup.StareSecondsAt(dd + 10f) > Pickup.StareSecondsAt(dd) || Pickup.StareSecondsAt(dd) < 0.5f) stepsDown = false;
                 Check($"Powerup stares take {Pickup.StareSecondsAt(0f):0.00} s at the start, {Pickup.StareSecondsAt(600f):0.00} s at 600 m, {Pickup.StareSecondsAt(3000f):0.00} s at the most; storage items {StorageCatalog.UseSeconds:0.0} s",
-                    Mathf.Approximately(Pickup.StareSecondsAt(0f), 1f) && Pickup.StareSecondsAt(600f) < 1f && Mathf.Approximately(Pickup.StareSecondsAt(3000f), 0.5f) && stepsDown && Mathf.Approximately(StorageCatalog.UseSeconds, 1f));
+                    Mathf.Approximately(Pickup.StareSecondsAt(0f), 1f) && Pickup.StareSecondsAt(600f) < 1f && Mathf.Approximately(Pickup.StareSecondsAt(3000f), 0.5f) && stepsDown && Mathf.Approximately(StorageCatalog.UseSeconds, 0.5f));
             }
             Check("Dashboard: big 3-segment health dial in the middle, weather dial on its left, storage built in on its right", rackInDash && director.Gauges.root.Find("Speed Readout") == null && director.Gauges.root.Find("Horde Icon") == null && director.Gauges.root.Find("Weather Icon Snow") != null
                 && director.Gauges.Value(Gauge.Health).Contains("/"));
@@ -1814,12 +1852,29 @@ namespace LastLight.EditorTools
                 Check($"Pines, rocks and grass tufts are the Tripo models ({pineChunks}/{rockChunks}/{grassChunks} chunks, {tris} prop triangles loaded)",
                     pineChunks > 0 && rockChunks > 0 && grassChunks > 0);
             }
+            {
+                var sm = SceneryModels.Load();
+                bool baked = sm != null && new[] { sm.branch, sm.fallingBoulder, sm.barricade, sm.fallenLog, sm.wideTree, sm.cliffRock, sm.coin, sm.turret, sm.shovel }.All(m => m.Ready);
+                var tripoHazardMats = new System.Collections.Generic.HashSet<string> { "LL_StormBranch", "LL_FallingBoulder", "LL_RoadBarricade", "LL_FallenLog", "LL_FallenTreeWide" };
+                string MatName(Component c) { var r = c.GetComponentInChildren<MeshRenderer>(true); return r != null && r.sharedMaterial != null ? r.sharedMaterial.name : ""; }
+                var hz = Object.FindObjectsByType<Hazard>(FindObjectsSortMode.None).Where(h => h.kind != HazardKind.DeadEnd).ToList();
+                int tripoHazards = hz.Count(h => tripoHazardMats.Contains(MatName(h)));
+                var coins = Object.FindObjectsByType<Pickup>(FindObjectsInactive.Include, FindObjectsSortMode.None).Where(p => p.kind == PickupKind.Coin).ToList();
+                var filters = Object.FindObjectsByType<MeshFilter>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+                bool gear = filters.Any(f => f.name == "Turret Model") && filters.Any(f => f.name == "Blade Model");
+                int cliffChunks = filters.Count(f => f.name == "Cliff Rocks");
+                Check($"Hazards, coins, cliff rocks and the turret and plough are the Tripo props ({tripoHazards}/{hz.Count} hazards, {coins.Count} coins, {cliffChunks} cliff rock chunks)",
+                    baked && tripoHazards == hz.Count && coins.All(p => MatName(p) == "LL_Coin") && gear);
+            }
             Check($"Spitters are the rigged Tripo model, lunging as the acid launches (spit clip weight {spitWeightAtLaunch:0.00} at launch)",
                 anySpitter && spittersUseModels && spitWeightAtLaunch > 0.8f);
             var groundRenderers = Object.FindObjectsByType<MeshRenderer>(FindObjectsSortMode.None).Where(r => r.name == "Terrain").ToList();
-            Check($"Road chunks use the textured road / dirt / grass ground ({groundRenderers.Count} chunks)",
-                groundRenderers.Count > 0 && groundRenderers.All(r => r.sharedMaterial != null && r.sharedMaterial.IsKeywordEnabled("_LL_GROUND")
-                    && r.sharedMaterial.GetTexture("_RoadMap") != null && r.sharedMaterial.GetTexture("_DirtMap") != null && r.sharedMaterial.GetTexture("_GrassMap") != null));
+            // Smooth means shared vertices: a flat-shaded grid would need a vertex per triangle corner.
+            bool groundSmooth = groundRenderers.All(r => { var mf = r.GetComponent<MeshFilter>(); return mf != null && mf.sharedMesh != null && mf.sharedMesh.vertexCount * 3 < mf.sharedMesh.GetIndexCount(0); });
+            Check($"Road chunks use the smooth ground blending road, dirt, grass and rock ({groundRenderers.Count} chunks)",
+                groundRenderers.Count > 0 && groundSmooth && groundRenderers.All(r => r.sharedMaterial != null && r.sharedMaterial.IsKeywordEnabled("_LL_GROUND")
+                    && r.sharedMaterial.GetTexture("_RoadMap") != null && r.sharedMaterial.GetTexture("_DirtMap") != null
+                    && r.sharedMaterial.GetTexture("_GrassMap") != null && r.sharedMaterial.GetTexture("_RockMap") != null));
             sb.AppendLine();
             sb.AppendLine($"Splits generated: {count("has a dead end")} with a dead end, {count("has an obstacle branch")} with an obstacle branch");
             sb.AppendLine($"Counts: coins {count("Coin collected")}, boosters {count("Booster collected")}, shields {count("Shield collected")}, flashlights {count("Flashlight collected")}, shield saves {count("Shield absorbed") + count("Shield stopped")}, scrapes {count("Scraping")}, sweeps {count("Swept boulder")}, damage events {count(", health ")}, splits {count("split:")}");

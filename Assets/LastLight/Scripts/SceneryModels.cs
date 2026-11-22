@@ -26,6 +26,35 @@ namespace LastLight
         /// <summary>The Tripo garage diorama, baked with its turntable centred on the origin and the turntable's top at y = 0.</summary>
         public Mesh garageMesh;
         public Material garageMaterial;
+        /// <summary>A clean steel disc covering the garage's turntable (same space as the garage mesh), with its own material.</summary>
+        public Mesh garagePlatformMesh;
+        public Material garagePlatformMaterial;
+        public bool HasGaragePlatform => garagePlatformMesh != null && garagePlatformMaterial != null;
+
+        /// <summary>A baked Tripo model and its LastLight/DioramaTextured material.</summary>
+        [System.Serializable]
+        public struct Model
+        {
+            public Mesh mesh;
+            public Material material;
+            public bool Ready => mesh != null && material != null;
+        }
+
+        /// <summary>
+        /// The second batch of Tripo props, baked by Configure Prop Models at their gameplay size. Road hazards (branch,
+        /// log, wide tree, barricade) lie along X with their base on y = 0 and are as long as the hazard they replace;
+        /// the falling boulder (2 across) and the coin (1.7 across, standing in the XY plane) are centred on the origin;
+        /// the cliff rock is 1 unit tall with its base centre at the origin, for merging into chunks; the turret and the
+        /// plough face +Z with their base on y = 0. Any that isn't ready falls back to its procedural mesh.
+        /// </summary>
+        public Model branch, fallingBoulder, barricade, fallenLog, wideTree, cliffRock, coin, turret, shovel;
+
+        /// <summary>The model picked by <paramref name="pick"/> when Tripo models are on and it is baked, otherwise an empty one.</summary>
+        public static Model Get(System.Func<SceneryModels, Model> pick)
+        {
+            var p = Active;
+            return p != null ? pick(p) : default;
+        }
 
         public bool HasVehicle(int i) => vehicleMeshes != null && vehicleMaterials != null && i >= 0 && i < vehicleMeshes.Length && i < vehicleMaterials.Length
             && vehicleMeshes[i] != null && vehicleMaterials[i] != null;

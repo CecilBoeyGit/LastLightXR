@@ -105,7 +105,9 @@ namespace LastLight
             }
             else
             {
-                var r = MeshBuilder.Spawn("Icon", go.transform, mesh, mat);
+                // Coins use the Tripo coin when it is baked (1.7 across, the same as the procedural disc).
+                var coin = kind == PickupKind.Coin ? SceneryModels.Get(m => m.coin) : default;
+                var r = coin.Ready ? MeshBuilder.Spawn("Icon", go.transform, coin.mesh, coin.material) : MeshBuilder.Spawn("Icon", go.transform, mesh, mat);
                 float scale = kind == PickupKind.Coin ? 0.8f : 1.5f;
                 r.transform.localScale = Vector3.one * scale;
                 p.visual = r.gameObject;
