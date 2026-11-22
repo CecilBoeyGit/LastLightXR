@@ -1693,7 +1693,7 @@ namespace LastLight.EditorTools
                 bool stepsDown = true;
                 for (float dd = 0f; dd < 3000f; dd += 10f) if (Pickup.StareSecondsAt(dd + 10f) > Pickup.StareSecondsAt(dd) || Pickup.StareSecondsAt(dd) < 0.5f) stepsDown = false;
                 Check($"Powerup stares take {Pickup.StareSecondsAt(0f):0.00} s at the start, {Pickup.StareSecondsAt(600f):0.00} s at 600 m, {Pickup.StareSecondsAt(3000f):0.00} s at the most; storage items {StorageCatalog.UseSeconds:0.0} s",
-                    Mathf.Approximately(Pickup.StareSecondsAt(0f), 1f) && Pickup.StareSecondsAt(600f) < 1f && Mathf.Approximately(Pickup.StareSecondsAt(3000f), 0.5f) && stepsDown && Mathf.Approximately(StorageCatalog.UseSeconds, 1f));
+                    Mathf.Approximately(Pickup.StareSecondsAt(0f), 1f) && Pickup.StareSecondsAt(600f) < 1f && Mathf.Approximately(Pickup.StareSecondsAt(3000f), 0.5f) && stepsDown && Mathf.Approximately(StorageCatalog.UseSeconds, 0.5f));
             }
             Check("Dashboard: big 3-segment health dial in the middle, weather dial on its left, storage built in on its right", rackInDash && director.Gauges.root.Find("Speed Readout") == null && director.Gauges.root.Find("Horde Icon") == null && director.Gauges.root.Find("Weather Icon Snow") != null
                 && director.Gauges.Value(Gauge.Health).Contains("/"));

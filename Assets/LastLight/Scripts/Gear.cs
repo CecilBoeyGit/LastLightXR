@@ -244,8 +244,10 @@ namespace LastLight
 
         readonly Transform root, blade;
         static readonly Vector3 BladeRest = new Vector3(0f, 0.5f, 0.15f);
-        /// <summary>How far ahead of the mount the front of the procedural blade reaches.</summary>
-        const float FrontZ = 0.3f;
+        /// <summary>The mount sits this far ahead of the vehicle's front bumper (see GameDirector.MountGear).</summary>
+        public const float MountAhead = 0.2f;
+        /// <summary>How far the back of the Tripo plough tucks into the bumper, so it looks bolted on without reaching the body.</summary>
+        const float Tuck = 0.06f;
         readonly Transform[] pips = new Transform[MaxHits];
         float bump, pop;
 
@@ -269,9 +271,10 @@ namespace LastLight
             blade.localPosition = BladeRest;
             if (model.Ready)
             {
-                // The Tripo plough (blade and arms in one, 2.6 wide, facing +Z) with its front edge where the procedural blade's is.
+                // The Tripo plough (blade and arms in one, 2.6 wide, facing +Z) entirely ahead of the bumper, its arms just
+                // touching it, so it never reaches into the body of any vehicle.
                 var m = MeshBuilder.Spawn("Blade Model", blade, model.mesh, model.material);
-                m.transform.localPosition = new Vector3(0f, -BladeRest.y, FrontZ - BladeRest.z - model.mesh.bounds.max.z);
+                m.transform.localPosition = new Vector3(0f, -BladeRest.y, -MountAhead - Tuck - BladeRest.z - model.mesh.bounds.min.z);
             }
             else
             {
@@ -293,7 +296,10 @@ namespace LastLight
             for (int i = 0; i < MaxHits; i++)
             {
                 var pr = MeshBuilder.Spawn("Hit Lamp", blade, pipMesh, solidMat);
-                pr.transform.localPosition = model.Ready ? new Vector3((i - (MaxHits - 1) * 0.5f) * 0.36f, model.mesh.bounds.max.y - BladeRest.y + 0.06f, FrontZ - BladeRest.z - 0.2f)
+                // On the Tripo plough they sit along the striped top edge of the blade, in front of the mounting brackets.
+                var mb0 = model.Ready ? model.mesh.bounds : default;
+                pr.transform.localPosition = model.Ready ? new Vector3((i - (MaxHits - 1) * 0.5f) * 0.36f, mb0.min.y + mb0.size.y * 0.66f - BladeRest.y,
+                                                             -MountAhead - Tuck - BladeRest.z + mb0.size.z * 0.62f)
                                                          : Quaternion.Euler(-14f, 0f, 0f) * new Vector3((i - (MaxHits - 1) * 0.5f) * 0.36f, 0.53f, 0f);
                 if (!model.Ready) pr.transform.localRotation = Quaternion.Euler(-14f, 0f, 0f);
                 pips[i] = pr.transform;

@@ -147,7 +147,8 @@ namespace LastLight.EditorTools
         /// How each prop is fitted for the game: a rotation (degrees, applied to the model as exported, before fitting) that
         /// stands it the right way up and turns its front to -Z (hazards, which face the oncoming car) or +Z (gear, which
         /// faces up the road), then the fit, its size in game units and a squash applied after fitting (the plough is
-        /// flattened so that, scaled to the 2.6-wide gameplay blade, it doesn't hide the front of the car). Checked
+        /// flattened and made shallower so that, scaled to the 2.6-wide gameplay blade, it doesn't hide the front of the
+        /// car and fits between the bumper and the 0.55 gameplay reach). Checked
         /// against Logs/LastLightPreview/prop_*.png.
         /// </summary>
         static readonly (string name, Vector3 euler, Fit fit, float size, Vector3 squash, System.Action<SceneryModels, SceneryModels.Model> store)[] Bakes =
@@ -160,7 +161,7 @@ namespace LastLight.EditorTools
             ("LL_CliffRock", new Vector3(0f, 0f, 0f), Fit.UnitTall, 1f, Vector3.one, (a, m) => a.cliffRock = m),
             ("LL_Coin", new Vector3(0f, 0f, 0f), Fit.Centred, 1.7f, Vector3.one, (a, m) => a.coin = m),
             ("LL_RoofTurret", new Vector3(0f, 0f, 0f), Fit.Footprint, 0.95f, Vector3.one, (a, m) => a.turret = m),
-            ("LL_PloughShovel", new Vector3(0f, 0f, 0f), Fit.WidthX, 2.6f, new Vector3(1f, 0.68f, 0.8f), (a, m) => a.shovel = m),
+            ("LL_PloughShovel", new Vector3(0f, 0f, 0f), Fit.WidthX, 2.6f, new Vector3(1f, 0.68f, 0.42f), (a, m) => a.shovel = m),
         };
 
         const string ModelsPath = "Assets/LastLight/Resources/" + SceneryModels.ResourcePath + ".asset";
@@ -339,6 +340,71 @@ namespace LastLight.EditorTools
                     File.WriteAllBytes(Path.Combine(dir, "prop_" + name + ".png"), sheet.EncodeToPNG());
                     Object.DestroyImmediate(sheet);
                     Object.DestroyImmediate(go); Object.DestroyImmediate(xBar); Object.DestroyImmediate(zBar);
+                }
+                RenderTexture.active = null;
+                EditorApplication.Exit(0);
+            }
+            catch (System.Exception e) { Debug.LogException(e); EditorApplication.Exit(1); }
+        }
+
+        /// <summary>
+        /// Renders each vehicle with the plough and the roof turret fitted the way the game fits them (the real Shovel and
+        /// TurretGun, mounted as GameDirector.MountGear does), from the side, from above and from in front at an angle,
+        /// into Logs/LastLightPreview/gear_check_{vehicle}.png, to check the gear doesn't sink into any body.
+        /// Batch: -executeMethod LastLight.EditorTools.PropModelSetup.RenderGearCheckBatch
+        /// </summary>
+        public static void RenderGearCheckBatch()
+        {
+            try
+            {
+                Shader.SetGlobalVector("_LL_Ambient", new Vector4(1f, 1f, 1f, 0f));
+                Shader.SetGlobalVector("_LL_Moon", new Vector4(0f, 1f, 0f, 0f));
+                Shader.SetGlobalVector("_LL_Disk", new Vector4(0f, 0f, 0f, 1000f));
+                Shader.SetGlobalVector("_LL_HeadPos", new Vector4(0f, -100f, 0f, 0.001f));
+                Shader.SetGlobalVector("_LL_Weather", Vector4.zero);
+                var solid = AssetDatabase.LoadAssetAtPath<Material>("Assets/LastLight/Materials/LL_Terrain.mat");
+                var glow = AssetDatabase.LoadAssetAtPath<Material>("Assets/LastLight/Materials/LL_Glow.mat");
+                string dir = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "Logs", "LastLightPreview"));
+                Directory.CreateDirectory(dir);
+                var cam = new GameObject("Gear Camera").AddComponent<Camera>();
+                cam.clearFlags = CameraClearFlags.SolidColor;
+                cam.backgroundColor = new Color(0.35f, 0.35f, 0.38f);
+                cam.orthographic = true;
+                cam.orthographicSize = 2.1f;
+                const int W = 640;
+                var rt = new RenderTexture(W, W, 24, RenderTextureFormat.ARGB32);
+                cam.targetTexture = rt;
+                for (int v = 0; v < VehicleCatalog.Count; v++)
+                {
+                    if (!VehicleCatalog.TryModel(v, out Mesh mesh, out Material mat)) { Debug.LogWarning($"[LastLight] No model for vehicle {v}"); continue; }
+                    var car = new GameObject("Vehicle " + v).transform;
+                    car.gameObject.AddComponent<MeshFilter>().sharedMesh = mesh;
+                    car.gameObject.AddComponent<MeshRenderer>().sharedMaterial = mat;
+                    var turret = new TurretGun(car, solid, glow);
+                    turret.SetMount(new Vector3(0f, VehicleCatalog.RoofY(v), -0.2f));
+                    var shovel = new Shovel(car, solid);
+                    shovel.SetMount(new Vector3(0f, 0f, VehicleCatalog.FrontZ(v) + Shovel.MountAhead));
+                    shovel.Activate();
+                    shovel.Root.localScale = Vector3.one;
+                    var turretRoot = car.Find("Turret");
+                    turretRoot.gameObject.SetActive(true);
+                    turretRoot.localScale = Vector3.one;
+                    var sheet = new Texture2D(W * 3, W, TextureFormat.RGB24, false);
+                    var centre = new Vector3(0f, 0.9f, 0.4f);
+                    Vector3[] eyes = { new Vector3(12f, 0f, 0f), new Vector3(0f, 12f, 0.01f), new Vector3(6f, 5f, 9f) };
+                    for (int k = 0; k < 3; k++)
+                    {
+                        cam.transform.position = centre + eyes[k];
+                        cam.transform.LookAt(centre, k == 1 ? Vector3.forward : Vector3.up);
+                        cam.nearClipPlane = 0.01f; cam.farClipPlane = 40f;
+                        cam.Render();
+                        RenderTexture.active = rt;
+                        sheet.ReadPixels(new Rect(0, 0, W, W), k * W, 0);
+                    }
+                    sheet.Apply();
+                    File.WriteAllBytes(Path.Combine(dir, $"gear_check_{v}.png"), sheet.EncodeToPNG());
+                    Object.DestroyImmediate(sheet);
+                    Object.DestroyImmediate(car.gameObject);
                 }
                 RenderTexture.active = null;
                 EditorApplication.Exit(0);

@@ -392,7 +392,7 @@ namespace LastLight
         void MountGear()
         {
             turret.SetMount(new Vector3(0f, car.RoofY, -0.2f));
-            shovel.SetMount(new Vector3(0f, 0f, car.FrontZ + 0.2f));
+            shovel.SetMount(new Vector3(0f, 0f, car.FrontZ + Shovel.MountAhead));
         }
 
         TrackGenerator NewTrack(int trackSeed)
