@@ -1,0 +1,35 @@
+Last Light is a mixed-reality survival driving game for PICO headsets. In camera passthrough, a round forest diorama floats in front of you while your room stays visible around it. Pines, cliffs and a winding road are painted like a tabletop miniature. An ochre Scout Jeep is picking its way through the night. A pale zombie horde is closing in behind it. Pinch and drag a glowing beacon to guide the Jeep, and look into the dark to see what lies ahead.
+
+Drive with your hands and scout with your eyes
+
+The beacon is your steering point. Pinch it and drag to guide the Jeep along the road. Your eyes are a second controller. As you look ahead, a warm scout light follows your gaze and reveals the stretch of forest you're studying. Find the outside edge of a bend, pick out a boulder or a fallen log, or check where two roads divide. Cool blues and greens frame the edge of the light, so each part of the road you reveal stands out against the forest at night.
+
+You can guide the Jeep toward one part of the road while looking at another. That matters when the safest path is hard to read at first glance. At a fork, sweep your gaze across the split and look for a barricade before committing to a branch. When two cliff roads run alongside each other, follow them with your eyes. One lane may lead straight into a dead end. If you drift too close to an edge, the Jeep scrapes it and throws sparks.
+
+Collect supplies and choose when to use them
+
+Hold your gaze on a coin to collect it. Powerups work the same way. A speed booster, a shovel, a roof turret, a shield, a flashlight and a repair kit can all be picked up by looking at them. Look at the dashboard when you want to use a stored item. Hold your gaze on its storage slot to put it to work. The dashboard is where you make that choice while the forest and the horde still demand your attention.
+
+A branch blocked by a barricade can become a route if you have a shovel to smash through it. A speed booster can help when you want to put more distance between the Jeep and the horde. The flashlight is another tool for dealing with the dark.
+
+Keep an eye on acid-spitting zombies too. Hold your gaze on one and you'll throw a rock at it for coins. That gives you a reason to look at a threat even when you're busy reading the road. When the Jeep takes damage, the wrench repair mini-game gives you a way to fix it.
+
+Read a forest that changes on every run
+
+The road is procedural, so each run takes a different route through the forest. A clear stretch can turn into a choice between branches, and the opening between two rows of pines can lead to a road cut into a cliff. Boulders and logs are part of this miniature landscape. You get to know what a barricade or a cliff edge looks like in your scout light, but you still have to look for it on the road in front of you.
+
+Weather changes how you read that road. Fog rolls across the diorama. Thunderstorms bring puddles and branches blown by the wind, adding obstacles to the route. After 1,600 metres, snow can roll in. The Jeep skids in the snow and leaves tyre tracks behind it. The change is visible at miniature scale, from the marks traced by the Jeep to the pale road emerging where your gaze falls.
+
+The round diorama keeps the run in view as the path bends, splits and heads deeper into the forest. The chase plays out across the same small world as the road hazards. Pale figures are at your back while your gaze is out ahead, searching for the next turn. Those two directions compete for your attention, especially when a powerup on the road or an item in the dashboard gives you another place to look.
+
+Make the garage your own
+
+Between runs, the floating garage gives your vehicle its own turntable. The Scout Jeep is the vehicle you start with. Reach 800 metres to unlock the Hauler Pickup, 1,500 metres for the Rhino APC and 3,000 metres for the Angel Transponder. Each milestone gives you a distance to aim for, even as the road leading there changes from run to run.
+
+Spend coins in the garage on upgrades. Pick a paint colour for your vehicle or add storage slots to carry more items on the dashboard. There are four traits to upgrade. Visibility, Controls, Evasion and Recovery let you choose which part of your setup to work on first. The coins you collect on the road, including the ones you earn by targeting acid-spitting zombies, feed back into those garage choices.
+
+A night chase in miniature
+
+The forest's chunky, hand-painted models are built to read from above. The ochre Jeep stands out among moonlit pines and layered cliffs. The scout light brings a warm patch of colour into the blue-green night, and the dashboard's retro American comic icons give the powerups a different look from the painted world around them. In passthrough, you can see the boundary of that little forest and your own room beyond it.
+
+There's always another decision just beyond the glow. Look far enough ahead to see which way the road goes, bring your gaze back for a coin or a supply, then use the beacon to take the line you've chosen. The horde is still behind you, the weather can turn, and the next run will lay out a different road. See how far you can drive before the dark catches up.
