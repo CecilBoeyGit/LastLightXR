@@ -1,11 +1,17 @@
 # Last Light changelog
 
-Builds are release APKs for PICO Swan (Android, ARM64), package `com.lastlight.prototype`.
+Builds are release APKs for PICO Swan (Android, ARM64), package `com.lastlight.game` (`com.lastlight.prototype`
+up to the debug-signed 0.1.25).
 Version history before git: 0.1.1 to 0.1.5 were built and installed but not committed, so the first
 commit holds the 0.1.6 source.
 
 ## 0.1.25
 
+- Store build: the package is now `com.lastlight.game` instead of `com.lastlight.prototype`, and release APKs are
+  signed with the Last Light release key instead of Android's debug key. The keystore lives in
+  `~/Keystores/lastlight-release.keystore`, outside the repo, with its password in the macOS login keychain (service
+  `lastlight-release-keystore`). A release build refuses to run without them and refuses an APK still signed with
+  the debug key. On the headset this is a separate app from the old prototype, so coins and unlocks start fresh.
 - Fix: the Tripo boulder thrown at spitters was hard to see. It used the scenery's night-shaded material, so outside
   the scout light it went dark, and the glow ball drew over it. It now glows from within like the powerups, is a
   little bigger (1.1 across), and its halo is faint enough for the rock to show through.

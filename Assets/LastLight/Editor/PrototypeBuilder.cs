@@ -348,6 +348,89 @@ namespace LastLight.EditorTools
             catch (System.Exception e) { problem = "couldn't read the APK's manifest: " + e.Message; return false; }
         }
 
+        /// <summary>The app's permanent ID on the store and the headset. Changing it makes a separate app.</summary>
+        public const string PackageName = "com.lastlight.game";
+
+        /// <summary>
+        /// Release signing. The keystore lives outside the repo (never commit it) and its password lives in the macOS
+        /// login keychain, so neither is written into the project. Create them once with:
+        ///   keytool -genkeypair -v -keystore ~/Keystores/lastlight-release.keystore -alias lastlight -keyalg RSA -keysize 2048 -validity 10000
+        ///   security add-generic-password -a "$USER" -s lastlight-release-keystore -w
+        /// LL_KEYSTORE and LL_KEY_ALIAS override the path and alias.
+        /// </summary>
+        const string KeychainService = "lastlight-release-keystore";
+        static string KeystorePath => System.Environment.GetEnvironmentVariable("LL_KEYSTORE") is string p && p.Length > 0
+            ? p : Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.UserProfile), "Keystores", "lastlight-release.keystore");
+        static string KeyAlias => System.Environment.GetEnvironmentVariable("LL_KEY_ALIAS") is string a && a.Length > 0 ? a : "lastlight";
+
+        /// <summary>Reads the keystore password from the login keychain, or null. The password is never logged.</summary>
+        static string KeystorePassword()
+        {
+            try
+            {
+                var psi = new System.Diagnostics.ProcessStartInfo("/usr/bin/security", $"find-generic-password -s {KeychainService} -w")
+                {
+                    RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false
+                };
+                using var proc = System.Diagnostics.Process.Start(psi);
+                string pass = proc.StandardOutput.ReadToEnd().TrimEnd('\r', '\n');
+                proc.WaitForExit(15000);
+                return proc.ExitCode == 0 && pass.Length > 0 ? pass : null;
+            }
+            catch { return null; }
+        }
+
+        /// <summary>Points the build at the release keystore. False, with the reason, when it isn't set up.</summary>
+        static bool UseReleaseKeystore(out string problem)
+        {
+            problem = null;
+            if (!File.Exists(KeystorePath)) { problem = $"no release keystore at {KeystorePath}"; return false; }
+            string pass = KeystorePassword();
+            if (pass == null) { problem = $"no keystore password in the login keychain under \"{KeychainService}\""; return false; }
+            PlayerSettings.Android.useCustomKeystore = true;
+            PlayerSettings.Android.keystoreName = KeystorePath;
+            PlayerSettings.Android.keystorePass = pass;
+            PlayerSettings.Android.keyaliasName = KeyAlias;
+            PlayerSettings.Android.keyaliasPass = pass;   // PKCS12 keystores use one password for the store and the key
+            return true;
+        }
+
+        /// <summary>Clears the keystore settings after a build, so the path and password never end up in ProjectSettings.</summary>
+        static void ForgetKeystore()
+        {
+            PlayerSettings.Android.useCustomKeystore = false;
+            PlayerSettings.Android.keystoreName = "";
+            PlayerSettings.Android.keystorePass = "";
+            PlayerSettings.Android.keyaliasName = "";
+            PlayerSettings.Android.keyaliasPass = "";
+        }
+
+        /// <summary>Reads the APK's signing certificate with the SDK's apksigner. Returns its DN line, or null.</summary>
+        static string ApkSigner(string apkPath, out string problem)
+        {
+            problem = null;
+            try
+            {
+                string sdk = UnityEditor.Android.AndroidExternalToolsSettings.sdkRootPath;
+                string jdk = UnityEditor.Android.AndroidExternalToolsSettings.jdkRootPath;
+                string tools = Directory.GetDirectories(Path.Combine(sdk, "build-tools")).OrderBy(d => d).LastOrDefault();
+                if (tools == null) { problem = "no Android build-tools found"; return null; }
+                var psi = new System.Diagnostics.ProcessStartInfo(Path.Combine(tools, "apksigner"), $"verify --print-certs \"{apkPath}\"")
+                {
+                    RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false
+                };
+                psi.EnvironmentVariables["JAVA_HOME"] = jdk;
+                psi.EnvironmentVariables["PATH"] = Path.Combine(jdk, "bin") + ":" + psi.EnvironmentVariables["PATH"];
+                using var proc = System.Diagnostics.Process.Start(psi);
+                string output = proc.StandardOutput.ReadToEnd() + proc.StandardError.ReadToEnd();
+                proc.WaitForExit(60000);
+                string dn = output.Split('\n').FirstOrDefault(l => l.Contains("certificate DN:"));
+                if (proc.ExitCode != 0 || dn == null) { problem = "apksigner couldn't verify the APK: " + output.Trim(); return null; }
+                return dn.Substring(dn.IndexOf("DN:") + 3).Trim();
+            }
+            catch (System.Exception e) { problem = "couldn't run apksigner: " + e.Message; return null; }
+        }
+
         public static bool BuildAndroid(string arch, bool release)
         {
             if (!PicoFeaturesOn(out string picoProblem))
@@ -355,10 +438,24 @@ namespace LastLight.EditorTools
                 Debug.LogError("[LastLight] Android build refused: " + picoProblem);
                 return false;
             }
+            bool signed = UseReleaseKeystore(out string keyProblem);
+            if (!signed && release)
+            {
+                Debug.LogError("[LastLight] Release build refused: " + keyProblem + ". A store build must be signed with the "
+                    + "release key, not the debug key. See UseReleaseKeystore in PrototypeBuilder.cs to set it up.");
+                return false;
+            }
+            if (!signed) Debug.LogWarning("[LastLight] Development build signed with the debug key: " + keyProblem);
+            try { return BuildAndroidSigned(arch, release, signed); }
+            finally { if (signed) ForgetKeystore(); }
+        }
+
+        static bool BuildAndroidSigned(string arch, bool release, bool signed)
+        {
             if (!File.Exists(ScenePath)) Build();
             var target = UnityEditor.Build.NamedBuildTarget.Android;
             PlayerSettings.productName = "Last Light";
-            PlayerSettings.SetApplicationIdentifier(target, "com.lastlight.prototype");
+            PlayerSettings.SetApplicationIdentifier(target, PackageName);
             PlayerSettings.SetScriptingBackend(target, ScriptingImplementation.IL2CPP);
             PlayerSettings.Android.targetArchitectures = arch switch
             {
@@ -392,6 +489,19 @@ namespace LastLight.EditorTools
                 return false;
             }
             Debug.Log("[LastLight] PICO check passed: hand tracking, eye tracking and passthrough on; manifest has hand and eye tracking");
+            string signer = ApkSigner(s.outputPath, out string signProblem);
+            if (signer == null)
+            {
+                Debug.LogError("[LastLight] Signature check failed: " + signProblem);
+                return false;
+            }
+            bool debugKey = signer.Contains("CN=Android Debug");
+            if (release && debugKey)
+            {
+                Debug.LogError("[LastLight] Release APK is signed with the debug key; don't upload it: " + signer);
+                return false;
+            }
+            Debug.Log($"[LastLight] Signed by: {signer} ({(debugKey ? "debug key" : "release key")}), package {PackageName}");
             return true;
         }
 

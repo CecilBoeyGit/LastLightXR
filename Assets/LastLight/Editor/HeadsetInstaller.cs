@@ -15,7 +15,7 @@ namespace LastLight.EditorTools
     /// </summary>
     public static class HeadsetInstaller
     {
-        const string PackageName = "com.lastlight.prototype";
+        const string PackageName = PrototypeBuilder.PackageName;
 
         static string ProjectRoot => Path.GetFullPath(Path.Combine(Application.dataPath, ".."));
         static string LogDir => Path.Combine(ProjectRoot, "Logs", "LastLightDevice");
