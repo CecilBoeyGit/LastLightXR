@@ -1192,6 +1192,12 @@ namespace LastLight.EditorTools
                 Vector3 carW = director.Car.Root.position;
                 Render(cam, rt, carW + d.rotation * new Vector3(0.1f, 0.09f, -0.16f), carW + d.rotation * new Vector3(0f, 0.02f, 0.02f), Path.Combine(outDir, $"vehicle_{v}_behind.png"));
                 Render(cam, rt, carW + d.rotation * new Vector3(0.2f, 0.05f, 0.02f), carW + d.rotation * new Vector3(0f, 0.02f, 0.02f), Path.Combine(outDir, $"vehicle_{v}_side.png"));
+                // Each paint job, to check it replaces the body colour only.
+                for (int c = 1; c < VehicleCatalog.All[v].colors.Length; c++)
+                {
+                    director.Car.SetModel(v, c);
+                    Render(cam, rt, carW + d.rotation * new Vector3(0.2f, 0.05f, 0.02f), carW + d.rotation * new Vector3(0f, 0.02f, 0.02f), Path.Combine(outDir, $"vehicle_{v}_paint{c}.png"));
+                }
             }
             stats.AppendLine($"Vehicle models: {string.Join(", ", Enumerable.Range(0, VehicleCatalog.Count).Select(v => $"{VehicleCatalog.All[v].name} roof {VehicleCatalog.RoofY(v):0.00} front {VehicleCatalog.FrontZ(v):0.00}"))}");
             // Back to the pickup for the rest of the tests.
@@ -1844,6 +1850,7 @@ namespace LastLight.EditorTools
             Check($"Evasion level 2 shrugs off some crashes ({evaded} evaded, {damaged} damaged)", evasionMaxed && evaded > 0 && damaged > 0 && Mathf.Approximately(TraitCatalog.EvasionChance(1), 0.15f) && Mathf.Approximately(TraitCatalog.EvasionChance(2), 0.4f));
             Check("Each run gets a fresh random seed and a different road (fixed seed off)", roadsRandom);
             Check("Horde walkers are the rigged Tripo runner", director.Crowd.UsesModels);
+            Check("No loose rocks float under or round the island", d.Find("Island Rocks") == null);
             Check("Wrist MENU button shows on either wrist while that palm faces the head, and hides when it turns away or pinches", wristHiddenPalmAway && wristBothShown && wristNearWrist && wristHidesWhilePinching);
             Check("A second's look at the wrist button opens the pause menu (it fills as you look; a glance away resets it)", wristFilling && wristGlanceResets && wristNotEarly && pauseOpened);
             Check("The pause menu freezes the run, and Resume carries on", runFrozen && dashHiddenForPause && resumeFocused && resumed && runsAfterResume && dashBackAfterResume);

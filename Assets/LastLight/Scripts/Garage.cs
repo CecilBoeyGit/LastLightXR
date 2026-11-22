@@ -576,6 +576,7 @@ namespace LastLight
             r.sharedMaterial = StageMaterial(model ? vehicle : -1, outgoing, model ? mat : solidMat);
             tintBlock.Clear();
             if (model) tintBlock.SetColor(VehicleCatalog.PaintProperty, VehicleCatalog.Paint(vehicle, color));
+            if (model) tintBlock.SetVector(VehicleCatalog.PaintKeyProperty, VehicleCatalog.PaintKey(vehicle));
             r.SetPropertyBlock(tintBlock);
         }
 
@@ -597,6 +598,7 @@ namespace LastLight
             c.modelRenderer.sharedMaterial = model ? mat : solidMat;
             tintBlock.Clear();
             if (model) tintBlock.SetColor(VehicleCatalog.PaintProperty, VehicleCatalog.Paint(vehicle, color));
+            if (model) tintBlock.SetVector(VehicleCatalog.PaintKeyProperty, VehicleCatalog.PaintKey(vehicle));
             c.modelRenderer.SetPropertyBlock(tintBlock);
         }
 

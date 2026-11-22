@@ -12,6 +12,8 @@ namespace LastLight
         /// <summary>Best-run distance in metres needed before the vehicle can be bought.</summary>
         public float requiredDistance;
         public string[] colorNames;
+        /// <summary>The Tripo model's own body colour (see VehicleCatalog.PaintKey).</summary>
+        public Vector4 paintKey;
         public Color[] colors;
         public float roofY;         // where the turret mounts
         public float frontZ;        // front bumper, where the shovel mounts
@@ -37,6 +39,7 @@ namespace LastLight
                 cost = 0,
                 colorNames = new[] { "Ochre", "Olive", "Rust", "Arctic" },
                 colors = new[] { Palette.Ochre, Hex("#6b7a3a"), Hex("#a8432f"), Hex("#d9d6cc") },
+                paintKey = Key(34f, 0.70f, 0.52f, 15f),          // the Tripo model's ochre body, #845C27
                 roofY = 1.4f,
                 frontZ = 1.32f,
                 build = BuildJeep
@@ -50,6 +53,7 @@ namespace LastLight
                 requiredDistance = 800f,
                 colorNames = new[] { "Steel Blue", "Forest", "Charcoal", "Sunset" },
                 colors = new[] { Hex("#3f6f9a"), Hex("#2f5a3a"), Hex("#3a3c40"), Hex("#e0702e") },
+                paintKey = Key(186f, 0.54f, 0.35f, 18f),         // teal body, #29555A (the cream stripes stay)
                 roofY = 1.42f,
                 frontZ = 1.34f,
                 build = BuildPickup
@@ -63,6 +67,7 @@ namespace LastLight
                 requiredDistance = 1500f,
                 colorNames = new[] { "Gunmetal", "Desert", "Night", "Hazard" },
                 colors = new[] { Hex("#5a6068"), Hex("#b89a62"), Hex("#22252a"), Hex("#e8c02e") },
+                paintKey = Key(356f, 0.57f, 0.38f, 14f),         // maroon body, #622A2E (the gold stripes stay)
                 roofY = 1.55f,
                 frontZ = 1.36f,
                 build = BuildApc
@@ -76,6 +81,7 @@ namespace LastLight
                 requiredDistance = 3000f,
                 colorNames = new[] { "Rescue White", "Signal Red", "Hi-Vis Lime", "Night Navy" },
                 colors = new[] { Hex("#e9e6df"), Hex("#c8372d"), Hex("#c9e23a"), Hex("#25324a") },
+                paintKey = new Vector4(0.075f, 0.15f, 0.84f, 0f), // off-white body, #D6C4B5 (the red stripe stays)
                 roofY = 1.72f,
                 frontZ = 1.34f,
                 build = BuildAmbulance
@@ -122,10 +128,18 @@ namespace LastLight
             color = Mathf.Clamp(color, 0, def.colors.Length - 1);
             if (color == 0) return new Color(1f, 1f, 1f, 0f);
             Color c = def.colors[color];
-            return new Color(c.r, c.g, c.b, 0.85f);
+            return new Color(c.r, c.g, c.b, 1f);
         }
 
+        /// <summary>The vehicle's own body colour, for the shader's _PaintKey: the texels that the paint replaces.</summary>
+        public static Vector4 PaintKey(int vehicle) => All[Mathf.Clamp(vehicle, 0, All.Length - 1)].paintKey;
+
+        /// <summary>A coloured body's key: hue in degrees, saturation and value (sRGB), and how far off its hue still counts.</summary>
+        static Vector4 Key(float hueDegrees, float saturation, float value, float toleranceDegrees) =>
+            new Vector4(hueDegrees / 360f, saturation, value, toleranceDegrees / 360f);
+
         public const string PaintProperty = "_Paint";
+        public const string PaintKeyProperty = "_PaintKey";
 
         static readonly Dictionary<long, Mesh> cache = new Dictionary<long, Mesh>();
 

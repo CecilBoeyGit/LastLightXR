@@ -14,7 +14,8 @@ Shader "LastLight/DioramaTextured"
         _Fade ("Fade (1 solid, 0 gone)", Float) = 1
         _UseVertexColor ("Multiply Vertex Colour (0/1)", Float) = 0
         _SnowCover ("Snow Settles On This (0/1)", Range(0, 1)) = 1
-        _Paint ("Paint (rgb colour, a amount: repaints the texture's brightness)", Color) = (1,1,1,0)
+        _Paint ("Paint (rgb colour, a amount: replaces the body colour)", Color) = (1,1,1,0)
+        _PaintKey ("Paint Key (the body colour in sRGB HSV: hue, sat, value; w hue tolerance, 0 for an off-white body)", Vector) = (0,0,0,0)
         _ScanY ("Scan Height (object Y)", Float) = 0
         _ScanMode ("Scan (0 off, 1 keep below the line, -1 keep above)", Float) = 0
         _ScanColor ("Scan Edge Colour", Color) = (0.35, 0.9, 1, 1)
@@ -34,6 +35,7 @@ Shader "LastLight/DioramaTextured"
             #pragma fragment frag
             #pragma multi_compile_instancing
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/Color.hlsl"
 
             TEXTURE2D(_BaseMap);
             SAMPLER(sampler_BaseMap);
@@ -47,6 +49,7 @@ Shader "LastLight/DioramaTextured"
                 half _UseVertexColor;
                 half _SnowCover;
                 half4 _Paint;
+                float4 _PaintKey;
                 float _ScanY;
                 half _ScanMode;
                 half4 _ScanColor;
@@ -128,12 +131,33 @@ Shader "LastLight/DioramaTextured"
                 half3 tex = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, i.uv).rgb;
                 half3 vcol = lerp(half3(1, 1, 1), i.color.rgb, _UseVertexColor);
                 half3 albedo = tex * vcol * _Tint.rgb;
-                // Vehicle paint jobs: keep the texture's light and shade but recolour it.
+                // Vehicle paint jobs replace the body colour only. Texels close to the vehicle's own body colour (the key,
+                // in sRGB HSV) take the paint's hue and saturation, with their brightness scaled by paint over key, so the
+                // panel shading stays; tyres, glass, lights, trim and stripes are left as they are.
                 if (_Paint.a > 0.001)
                 {
-                    // Brightness as the eye sees it (square root of linear), so a mid-tone body maps to the paint's own tone.
-                    half lum = sqrt(max(dot(albedo, half3(0.3, 0.59, 0.11)), 0.0));
-                    albedo = lerp(albedo, saturate(_Paint.rgb * lum * 2.0), _Paint.a);
+                    float3 hsv = RgbToHsv(LinearToSRGB(albedo));
+                    float3 paint = RgbToHsv(LinearToSRGB(_Paint.rgb));
+                    float mask;
+                    if (_PaintKey.w > 0.0)
+                    {
+                        // A coloured body: near its hue, and nearly as saturated as the body itself, so duller parts of a
+                        // similar hue (brown wheel hubs, grey metal, dirt) keep their own colour.
+                        float dh = abs(hsv.x - _PaintKey.x);
+                        dh = min(dh, 1.0 - dh);
+                        mask = (1.0 - smoothstep(_PaintKey.w, _PaintKey.w * 1.6, dh))
+                             * smoothstep(_PaintKey.y * 0.55, _PaintKey.y * 0.75, hsv.y) * smoothstep(0.06, 0.12, hsv.z);
+                    }
+                    else
+                    {
+                        // An off-white body: pale and nearly colourless.
+                        mask = (1.0 - smoothstep(0.24, 0.34, hsv.y)) * smoothstep(0.5, 0.62, hsv.z);
+                    }
+                    float sat = _PaintKey.w > 0.0 ? paint.y * hsv.y / max(_PaintKey.y, 0.05) : paint.y;
+                    // Very dark paints are held at a deep shade, so the panels and their shading still read under the night lighting.
+                    float shade = max(paint.z, 0.3);
+                    float3 repainted = HsvToRgb(float3(paint.x, saturate(sat), saturate(hsv.z * shade / max(_PaintKey.z, 0.05))));
+                    albedo = lerp(albedo, SRGBToLinear(repainted), mask * _Paint.a);
                 }
 
                 float2 toDisk = i.positionWS.xz - _LL_Disk.xz;

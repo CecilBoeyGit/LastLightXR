@@ -4,6 +4,15 @@ Builds are release APKs for PICO Swan (Android, ARM64), package `com.lastlight.p
 Version history before git: 0.1.1 to 0.1.5 were built and installed but not committed, so the first
 commit holds the 0.1.6 source.
 
+## 0.1.23
+
+- The loose rocks that hung under and round the island are gone; they floated, unattached, in every view.
+- Vehicle paint jobs now replace the body colour instead of tinting the whole model. Each vehicle knows its own
+  body colour (Scout Jeep ochre, Hauler teal, Rhino maroon, Angel off-white); only texels close to it take the new
+  colour, keeping their light and shade. Tyres, glass, lights, wheel hubs, trim and the Hauler's cream stripes, the
+  Rhino's gold stripes and the Angel's red stripe and heartbeat logo keep their own colours. Very dark paints
+  (Charcoal, Night, Night Navy) are held at a deep shade so the panels still read under the night lighting.
+
 ## 0.1.22
 
 Everything in 0.1.21, plus the Tripo work from `feature/tripo-props-wired`, which 0.1.21 was missing:

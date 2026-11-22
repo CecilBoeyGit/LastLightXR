@@ -121,6 +121,7 @@ namespace LastLight
             bodyRenderer.sharedMaterial = UsesModel ? modelMat : boxMaterial;
             bodyBlock.Clear();
             if (UsesModel) bodyBlock.SetColor(VehicleCatalog.PaintProperty, VehicleCatalog.Paint(Model, color));
+            if (UsesModel) bodyBlock.SetVector(VehicleCatalog.PaintKeyProperty, VehicleCatalog.PaintKey(Model));
             bodyRenderer.SetPropertyBlock(bodyBlock);
         }
 
