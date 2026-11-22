@@ -169,6 +169,7 @@ namespace LastLight.EditorTools
                 {
                     asset.garageMesh = BakeFitted(AssetDatabase.LoadAssetAtPath<GameObject>(fbx), name + "_Diorama", asset, GarageYaw, true, 0f);
                     asset.garageMaterial = mat;
+                    BakePlatform(asset);
                 }
 
                 Debug.Log($"[LastLight] Scenery {name}: {(mesh != null ? mesh.GetIndexCount(0) / 3 : 0)} tris, " +
@@ -486,6 +487,8 @@ namespace LastLight.EditorTools
                     tris.Add(centre); tris.Add(b); tris.Add(a);   // clockwise from above, so it faces up
                 }
             }
+            PlatformHub = hubPos;
+            PlatformEdge = rim;
             Debug.Log($"[LastLight] Garage platform repair: {flipped} reversed faces flipped, {darkNormals} downward normals turned up, {capped} holes capped, {skipped} other open edge chains left (walls, outer rim); turntable hub {hubPos.ToString("0.00")} (valence {(hub >= 0 ? valence[hub] : 0)}), edge radius {rim:0.00}, backing disc {(rim > 1f && sample >= 0 ? "added" : "NOT added")}");
         }
 
@@ -545,6 +548,145 @@ namespace LastLight.EditorTools
             finally { Object.DestroyImmediate(inst); }
         }
 
+        /// <summary>The turntable's hub and wedge-edge radius, found by RepairPlatform for the steel disc.</summary>
+        static Vector3 PlatformHub;
+        static float PlatformEdge;
+
+        const string PlatformTexPath = "Assets/LastLight/Art/Tripo/garage/Textures/LL_GaragePlatform_BaseColor.png";
+        const string PlatformMatPath = "Assets/LastLight/Art/Tripo/garage/LL_GaragePlatform.mat";
+
+        /// <summary>
+        /// Covers the garage turntable with one clean steel disc. The Tripo turntable is a ring of wedge slabs whose texture
+        /// seams, slivers and patches read as damage even with the holes closed, so a flat disc sits just above them, out
+        /// to where the raised copper rim starts (found from the baked mesh), with its own brushed-steel material.
+        /// </summary>
+        static void BakePlatform(SceneryModels asset)
+        {
+            var src = asset.garageMesh;
+            if (src == null) return;
+            var verts = src.vertices;
+            // Highest point per 0.05-wide ring out from the centre.
+            const float bin = 0.05f;
+            var maxY = new float[120];
+            for (int i = 0; i < maxY.Length; i++) maxY[i] = float.MinValue;
+            var hub = new Vector2(PlatformHub.x, PlatformHub.z);
+            foreach (var v in verts)
+            {
+                if (v.y < -1.5f || v.y > 1.5f) continue;
+                int k = (int)((new Vector2(v.x, v.z) - hub).magnitude / bin);
+                if (k < maxY.Length) maxY[k] = Mathf.Max(maxY[k], v.y);
+            }
+            float top = float.MinValue;
+            for (int k = 0; k < (int)(2f / bin); k++) top = Mathf.Max(top, maxY[k]);
+            // The rim starts at the first ring past 2.5 that rises clearly above the plate.
+            // The copper ring round the turntable is almost flush with it, so the disc is sized from the wedges' edge: just past
+            // it, under the ring's inner half (the same reach as the backing disc that closed the gaps).
+            float rim = PlatformEdge > 1f ? PlatformEdge * 1.05f : 3.5f;
+            var profile = new System.Text.StringBuilder();
+            for (int k = (int)(2.8f / bin); k < (int)(4.2f / bin); k += 2) profile.Append($" {k * bin:0.0}:{maxY[k]:0.00}");
+            Debug.Log("[LastLight] Garage turntable height by radius:" + profile);
+            float plateY = top;
+            for (int k = 0; k < (int)(rim / bin) - 1; k++) plateY = Mathf.Max(plateY, maxY[k]);
+            plateY += 0.004f;
+            float radius = rim;
+
+            const int Segs = 96, Rings = 4;
+            var pv = new System.Collections.Generic.List<Vector3>();
+            var pn = new System.Collections.Generic.List<Vector3>();
+            var puv = new System.Collections.Generic.List<Vector2>();
+            var pt = new System.Collections.Generic.List<int>();
+            pv.Add(new Vector3(hub.x, plateY, hub.y)); pn.Add(Vector3.up); puv.Add(new Vector2(0.5f, 0.5f));
+            for (int r = 1; r <= Rings; r++)
+                for (int i = 0; i < Segs; i++)
+                {
+                    float a = i * Mathf.PI * 2f / Segs, f = (float)r / Rings;
+                    var dir = new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * f;
+                    pv.Add(new Vector3(hub.x + dir.x * radius, plateY, hub.y + dir.y * radius)); pn.Add(Vector3.up);
+                    puv.Add(new Vector2(0.5f + dir.x * 0.5f, 0.5f + dir.y * 0.5f));
+                }
+            for (int i = 0; i < Segs; i++) { pt.Add(0); pt.Add(1 + (i + 1) % Segs); pt.Add(1 + i); }
+            for (int r = 1; r < Rings; r++)
+                for (int i = 0; i < Segs; i++)
+                {
+                    int a0 = 1 + (r - 1) * Segs + i, a1 = 1 + (r - 1) * Segs + (i + 1) % Segs;
+                    int b0 = a0 + Segs, b1 = a1 + Segs;
+                    pt.Add(a0); pt.Add(a1); pt.Add(b1);
+                    pt.Add(a0); pt.Add(b1); pt.Add(b0);
+                }
+            const string meshName = "LL_Garage_Platform";
+            Mesh mesh = null;
+            foreach (var sub in AssetDatabase.LoadAllAssetsAtPath(AssetDatabase.GetAssetPath(asset)))
+                if (sub is Mesh existing && existing.name == meshName) mesh = existing;
+            if (mesh == null) { mesh = new Mesh { name = meshName }; AssetDatabase.AddObjectToAsset(mesh, asset); }
+            mesh.Clear();
+            mesh.SetVertices(pv); mesh.SetNormals(pn); mesh.SetUVs(0, puv); mesh.SetTriangles(pt, 0);
+            mesh.RecalculateBounds();
+            EditorUtility.SetDirty(mesh);
+
+            WritePlatformTexture();
+            var mat = AssetDatabase.LoadAssetAtPath<Material>(PlatformMatPath);
+            if (mat == null) { mat = new Material(Shader.Find("LastLight/DioramaTextured")); AssetDatabase.CreateAsset(mat, PlatformMatPath); }
+            mat.SetTexture("_BaseMap", AssetDatabase.LoadAssetAtPath<Texture2D>(PlatformTexPath));
+            mat.SetColor("_Tint", Color.white);
+            mat.SetFloat("_Emission", 0f);
+            mat.SetFloat("_ClipToDisk", 0f);
+            mat.SetFloat("_Fade", 1f);
+            mat.SetFloat("_UseVertexColor", 0f);
+            mat.SetFloat("_SnowCover", 0f);   // indoors
+            mat.enableInstancing = true;
+            EditorUtility.SetDirty(mat);
+            asset.garagePlatformMesh = mesh;
+            asset.garagePlatformMaterial = mat;
+            Debug.Log($"[LastLight] Garage platform: steel disc radius {radius:0.00} round hub ({hub.x:0.00}, {hub.y:0.00}) at y {plateY:0.000} (rim from {rim:0.00}, wedge edge {PlatformEdge:0.00}, plate top {top:0.000})");
+        }
+
+        /// <summary>
+        /// Paints the turntable's brushed-steel texture: fine lathe rings round the centre, a soft polished sheen across it,
+        /// a slightly darker edge and a small hub cap. Written once as a 1024 PNG.
+        /// </summary>
+        static void WritePlatformTexture()
+        {
+            const int N = 1024;
+            var tex = new Texture2D(N, N, TextureFormat.RGB24, false);
+            var px = new Color[N * N];
+            var rng = new System.Random(11);
+            var ringNoise = new float[2048];
+            float acc = 0f;
+            for (int i = 0; i < ringNoise.Length; i++) { acc = acc * 0.55f + (float)(rng.NextDouble() - 0.5); ringNoise[i] = acc; }
+            Color steel = new Color(0.47f, 0.48f, 0.5f), shine = new Color(0.78f, 0.8f, 0.83f), edge = new Color(0.3f, 0.3f, 0.32f);
+            for (int y = 0; y < N; y++)
+                for (int x = 0; x < N; x++)
+                {
+                    float u = (x + 0.5f) / N * 2f - 1f, v = (y + 0.5f) / N * 2f - 1f;
+                    float r = Mathf.Sqrt(u * u + v * v);
+                    float ang = Mathf.Atan2(v, u);
+                    // Lathe rings: a fine, irregular concentric grain.
+                    float grain = ringNoise[Mathf.Clamp((int)(r * 2000f), 0, ringNoise.Length - 1)] * 0.05f;
+                    // A broad sheen in two opposite lobes, as a turned steel plate catches the light.
+                    float lobe = Mathf.Pow(Mathf.Abs(Mathf.Cos(ang - 0.7f)), 6f) * Mathf.SmoothStep(0.05f, 0.5f, r) * (1f - Mathf.SmoothStep(0.85f, 1f, r));
+                    Color c = Color.Lerp(steel, shine, lobe * 0.55f);
+                    c = Color.Lerp(c, edge, Mathf.SmoothStep(0.86f, 1.0f, r) * 0.6f);
+                    // Hub cap and a fine groove round it.
+                    if (r < 0.07f) c = Color.Lerp(steel * 0.8f, shine, 0.25f * (1f - r / 0.07f));
+                    else if (r < 0.08f) c *= 0.7f;
+                    c = new Color(c.r + grain, c.g + grain, c.b + grain, 1f);
+                    px[y * N + x] = c;
+                }
+            tex.SetPixels(px);
+            tex.Apply();
+            Directory.CreateDirectory(Path.GetDirectoryName(PlatformTexPath));
+            File.WriteAllBytes(PlatformTexPath, tex.EncodeToPNG());
+            Object.DestroyImmediate(tex);
+            AssetDatabase.ImportAsset(PlatformTexPath, ImportAssetOptions.ForceUpdate);
+            if (AssetImporter.GetAtPath(PlatformTexPath) is TextureImporter ti)
+            {
+                ti.maxTextureSize = 1024; ti.mipmapEnabled = true; ti.sRGBTexture = true;
+                ti.textureCompression = TextureImporterCompression.Compressed;
+                ti.wrapMode = TextureWrapMode.Clamp;
+                ti.SaveAndReimport();
+            }
+        }
+
         /// <summary>
         /// Renders the baked garage flat-lit against magenta from above and from the front, so any hole in the platform
         /// shows as magenta. Writes Logs/LastLightPreview/garage_check_top.png and garage_check_front.png.
@@ -563,6 +705,13 @@ namespace LastLight.EditorTools
                 var go = new GameObject("Garage Check");
                 go.AddComponent<MeshFilter>().sharedMesh = asset.garageMesh;
                 go.AddComponent<MeshRenderer>().sharedMaterial = asset.garageMaterial;
+                if (asset.HasGaragePlatform)
+                {
+                    var plate = new GameObject("Platform");
+                    plate.transform.SetParent(go.transform, false);
+                    plate.AddComponent<MeshFilter>().sharedMesh = asset.garagePlatformMesh;
+                    plate.AddComponent<MeshRenderer>().sharedMaterial = asset.garagePlatformMaterial;
+                }
                 var cam = new GameObject("Check Camera").AddComponent<Camera>();
                 cam.clearFlags = CameraClearFlags.SolidColor;
                 cam.backgroundColor = Color.magenta;

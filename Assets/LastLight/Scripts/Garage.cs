@@ -99,6 +99,7 @@ namespace LastLight
             {
                 var g = MeshBuilder.Spawn("Garage", stageRoot, models.garageMesh, models.garageMaterial);
                 g.transform.localPosition = new Vector3(0f, TurntableY + VehicleY, TurntableZ);
+                if (models.HasGaragePlatform) MeshBuilder.Spawn("Garage Platform", g.transform, models.garagePlatformMesh, models.garagePlatformMaterial);
             }
             else
             {

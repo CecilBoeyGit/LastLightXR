@@ -26,6 +26,10 @@ namespace LastLight
         /// <summary>The Tripo garage diorama, baked with its turntable centred on the origin and the turntable's top at y = 0.</summary>
         public Mesh garageMesh;
         public Material garageMaterial;
+        /// <summary>A clean steel disc covering the garage's turntable (same space as the garage mesh), with its own material.</summary>
+        public Mesh garagePlatformMesh;
+        public Material garagePlatformMaterial;
+        public bool HasGaragePlatform => garagePlatformMesh != null && garagePlatformMaterial != null;
 
         /// <summary>A baked Tripo model and its LastLight/DioramaTextured material.</summary>
         [System.Serializable]
