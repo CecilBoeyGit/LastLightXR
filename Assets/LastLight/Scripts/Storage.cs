@@ -350,11 +350,14 @@ namespace LastLight
                 labels[i] = new Label(t, "Label", "", 0.24f, TextAnchor.MiddleCenter, ivory, new Vector2(0f, -SlotRadius + 0.32f), 26, true);
                 dwellMeshes[i] = new Mesh { name = "LL_StorageDwell_" + i };
                 dwellRings[i] = MeshBuilder.Spawn("Dwell", t, dwellMeshes[i], glowMat);
+                // Above the plate (order 1) and the item badge (4): see-through UI sorts by order before depth.
+                dwellRings[i].sortingOrder = 11;
                 dwellRings[i].transform.localPosition = new Vector3(0f, 0f, -0.3f);
                 dwellRings[i].gameObject.SetActive(false);
                 // A radial countdown: a wedge sweeping clockwise from 12 o'clock across the item while you look.
                 fillMeshes[i] = new Mesh { name = "LL_StorageFill_" + i };
                 fills[i] = MeshBuilder.Spawn("Countdown Fill", t, fillMeshes[i], glowMat);
+                fills[i].sortingOrder = 10;
                 fills[i].transform.localPosition = new Vector3(0f, 0f, -0.25f);
                 fills[i].gameObject.SetActive(false);
             }
@@ -362,6 +365,8 @@ namespace LastLight
 
         /// <summary>True while a slot's radial countdown fill is showing. For tests.</summary>
         public bool FillVisible(int slot) => fills[slot].gameObject.activeSelf;
+        /// <summary>True when the countdown draws above the plate and badges. For tests.</summary>
+        public bool FillOnTop(int slot) => fills[slot].sortingOrder > 5 && dwellRings[slot].sortingOrder > 5;
 
         public bool Visible
         {
@@ -459,7 +464,8 @@ namespace LastLight
                         mb.Tri(Vector3.zero, new Vector3(Mathf.Cos(a0), Mathf.Sin(a0), 0f) * r, new Vector3(Mathf.Cos(a1), Mathf.Sin(a1), 0f) * r, Color.white);
                     }
                     mb.ToMesh(fillMeshes[i].name, fillMeshes[i]);
-                    Color fc2 = StorageCatalog.Tint(item.Value); fc2.a = 0.45f + 0.25f * k;
+                    // A bright white wipe over the badge, so it reads on any item colour.
+                    Color fc2 = new Color(1f, 1f, 1f, 0.38f + 0.2f * k);
                     mpb.SetColor("_Tint", fc2);
                     fills[i].SetPropertyBlock(mpb);
                     mb.Clear();

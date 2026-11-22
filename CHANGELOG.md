@@ -4,6 +4,19 @@ Builds are release APKs for PICO Swan (Android, ARM64), package `com.lastlight.p
 Version history before git: 0.1.1 to 0.1.5 were built and installed but not committed, so the first
 commit holds the 0.1.6 source.
 
+## 0.1.20
+
+- Snow and ice only rolls in after 1,600 m; before that the weather is fog or storm.
+- Flashlights are much rarer: 12% of powerups in every stage, down from about 22%. Repairs stay as likely as
+  flashlights, so they're rarer too; boosters and shovels make up the difference. One flashlight still waits
+  before the weather starts, as the answer to fog.
+- Storage countdown, fixed: the ring and the radial fill now draw above the slot's backing plate and the item badge
+  (they were drawn underneath, so on the headset you couldn't see them). The fill is a bright white wipe so it
+  reads on any badge colour.
+- Repair QTE timer: each dot gives you 2.5 seconds, shown as a thin ring running down round it (flashing near the
+  end). Leave a dot too long and the repair fails: the wrench comes back and you start again.
+- Fix: the Evasion trait's roll could repeat the same result run after run with a pinned seed.
+
 ## 0.1.19
 
 - Every run now builds a fresh random road: bends, splits, cliff roads, hazards, powerups, spitters and weather.

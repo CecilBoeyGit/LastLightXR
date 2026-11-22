@@ -21,6 +21,8 @@ namespace LastLight
         const float RampSeconds = 1.5f;
         /// <summary>Metres into a run before the first weather can roll in.</summary>
         public const float FirstFrom = 520f;
+        /// <summary>Snow and ice only start after this far into a run; earlier encounters are fog or storm.</summary>
+        public const float SnowFrom = 1600f;
         const float FirstDelayMin = 4f, FirstDelayMax = 12f;       // seconds after passing FirstFrom
         const float MediumGapMin = 38f, MediumGapMax = 58f;
         const float LateGapMin = 28f, LateGapMax = 42f;
@@ -198,7 +200,7 @@ namespace LastLight
                         nextIn = !hadWeather ? Range(FirstDelayMin, FirstDelayMax)
                             : stage == GameStage.Late ? Range(LateGapMin, LateGapMax) : Range(MediumGapMin, MediumGapMax);
                     nextIn -= dt;
-                    if (nextIn <= 0f) Begin(PickKind(), Range(MinSeconds, MaxSeconds));
+                    if (nextIn <= 0f) Begin(PickKind(distance), Range(MinSeconds, MaxSeconds));
                 }
                 else if (Kind != WeatherKind.Clear)
                 {
@@ -272,11 +274,12 @@ namespace LastLight
             Push();
         }
 
-        /// <summary>Picks the next weather at random, never the same as the last one.</summary>
-        WeatherKind PickKind()
+        /// <summary>Picks the next weather at random, never the same as the last one, and no snow before <see cref="SnowFrom"/>.</summary>
+        WeatherKind PickKind(float distance)
         {
-            var options = new System.Collections.Generic.List<WeatherKind> { WeatherKind.Fog, WeatherKind.Storm, WeatherKind.Snow };
-            options.Remove(last);
+            var options = new System.Collections.Generic.List<WeatherKind> { WeatherKind.Fog, WeatherKind.Storm };
+            if (distance >= SnowFrom) options.Add(WeatherKind.Snow);
+            if (options.Count > 1) options.Remove(last);
             return options[rng.Next(options.Count)];
         }
 

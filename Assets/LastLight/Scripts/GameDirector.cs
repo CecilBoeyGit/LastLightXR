@@ -361,6 +361,7 @@ namespace LastLight
             qte.OnStarted = () => { sound?.Play(sound.gazeArm, 0.7f); Log("Repair started: look at the dots"); };
             qte.OnDotCleared = i => { sound?.Play(sound.coin, 0.8f); Log($"Repair dot {i + 1} of {RepairQte.DotCount} cleared"); };
             qte.OnCancelled = () => Log("Repair cancelled");
+            qte.OnTimedOut = () => { sound?.Play(sound.cancel, 0.7f); Log("Repair failed: a dot was left too long; look at the wrench to start again"); };
             thrower = new RockThrower(worldRoot, pickupMaterial, glowMaterial);
             thrower.OnThrow = z => { sound?.Play(sound.sweep, 0.7f); Log($"Threw a rock at a spitter {z.DioramaLocal.z:0} units ahead"); };
             thrower.OnHit = z =>
@@ -511,7 +512,8 @@ namespace LastLight
             interventions.SteerGain = 1f;
             interventions.GazeArmSuppressed = false;
             skidRng = new System.Random(runSeed * 31 + 7);
-            evadeRng = new System.Random(runSeed * 53 + 5);
+            // Varies by run as well as seed, so with a pinned seed each run's crashes don't all get the same roll.
+            evadeRng = new System.Random(runSeed * 53 + 5 + runIndex * 7919);
             branchRng = new System.Random(runSeed * 71 + 13);
             skidIn = 1.5f;
             branchIn = 1f;
@@ -1559,6 +1561,9 @@ namespace LastLight
                 if (car.trapped) autoEscaping = true;
                 if (autopilotMode == AutopilotMode.EscapeDeadEnds && fork.deadSide != 0 && car.branch == fork.deadSide && autoEscaping)
                     desired = TrackGenerator.EscapeCenter(fork, Mathf.Max(carS + 1f, fork.WallS));
+                // Through a smashed wall, follow the escape track it opens onto.
+                if (fork.wallBroken && fork.deadSide != 0 && car.branch == fork.deadSide && carS > fork.WallS - 1f)
+                    desired = TrackGenerator.EscapeCenter(fork, Mathf.Max(carS + 1f, fork.WallS));
             }
 
             track.Limits(carS, car.branch, out float min, out float max);
@@ -1607,7 +1612,10 @@ namespace LastLight
             }
             // Steer clear of acid that's about to land or still wet, like a player would,
             // unless a fallen tree close ahead needs the steering first.
-            if ((nearest == null || nearestDz > 9f) && !car.trapped && !autoEscaping && track.TwinAt(carS) == null && track.TwinAt(carS + 8f) == null && shooterSystem.NearestThreat(carS, 16f, out float acidX))
+            // Heading into a dead end on purpose, the test modes don't dodge acid: a dodge could line the jeep up with the gap by chance.
+            bool seekingWall = fork != null && fork.deadSide != 0 && (car.branch == 0 || car.branch == fork.deadSide)
+                && (autopilotMode == AutopilotMode.TakeDeadEnds || autopilotMode == AutopilotMode.EscapeDeadEnds);
+            if ((nearest == null || nearestDz > 9f) && !car.trapped && !autoEscaping && !seekingWall && track.TwinAt(carS) == null && track.TwinAt(carS + 8f) == null && shooterSystem.NearestThreat(carS, 16f, out float acidX))
             {
                 float clear = ShooterSystem.PuddleRadius * 0.7f + Vehicle.HalfWidth + 0.7f;
                 // On a cliff road the limits reach past the edge, so dodge only within the road itself.
@@ -1681,6 +1689,8 @@ namespace LastLight
                 {
                     if (p == null || !p.alive) continue;
                     if (p.kind == PickupKind.Coin) continue;
+                    // The dead-end and no-steering test modes leave shovels: one would smash the walls and obstacles they test.
+                    if (p.kind == PickupKind.Shovel && (autopilotMode == AutopilotMode.TakeDeadEnds || autopilotMode == AutopilotMode.EscapeDeadEnds || autopilotMode == AutopilotMode.NoSteering)) continue;
                     float z = p.DioramaLocal.z;
                     if (z < 8f || z > Diorama.Radius + Diorama.ScoutRange - 4f) continue;
                     if (z < bestZ) { bestZ = z; autoGazeTarget = p; }

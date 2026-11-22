@@ -1179,23 +1179,23 @@ namespace LastLight
         static readonly int GuaranteedShieldChunk = FirstShooterChunk - 4;
 
         /// <summary>
-        /// Which powerup a roll gives. Flashlights and repairs are common and equally likely all run. The shovel
-        /// is a medium-rarity find, less common late on. The shield is rare all run. The turret only appears from
-        /// the medium stage, when shooter zombies do.
+        /// Which powerup a roll gives. Flashlights and repairs are uncommon and equally likely all run (12% each). The
+        /// booster and shovel are the common finds, the shovel less so late on. The shield is rare all run. The turret
+        /// only appears from the medium stage, when shooter zombies do.
         /// </summary>
         public static PickupKind PowerupKind(double r, GameStage stage)
         {
             switch (stage)
             {
-                case GameStage.Early:   // booster 26%, shovel 22%, flashlight 22%, repair 22%, shield 8%
-                    return r < 0.26 ? PickupKind.Booster : r < 0.48 ? PickupKind.Shovel : r < 0.70 ? PickupKind.Flashlight
+                case GameStage.Early:   // booster 34%, shovel 34%, flashlight 12%, repair 12%, shield 8%
+                    return r < 0.34 ? PickupKind.Booster : r < 0.68 ? PickupKind.Shovel : r < 0.80 ? PickupKind.Flashlight
                          : r < 0.92 ? PickupKind.Repair : PickupKind.Shield;
-                case GameStage.Medium:  // booster 18%, shovel 18%, flashlight 21%, repair 21%, turret 14%, shield 8%
-                    return r < 0.18 ? PickupKind.Booster : r < 0.36 ? PickupKind.Shovel : r < 0.57 ? PickupKind.Flashlight
-                         : r < 0.78 ? PickupKind.Repair : r < 0.92 ? PickupKind.Turret : PickupKind.Shield;
-                default:                // booster 18%, shovel 12%, flashlight 22%, repair 22%, turret 18%, shield 8%
-                    return r < 0.18 ? PickupKind.Booster : r < 0.30 ? PickupKind.Shovel : r < 0.52 ? PickupKind.Flashlight
-                         : r < 0.74 ? PickupKind.Repair : r < 0.92 ? PickupKind.Turret : PickupKind.Shield;
+                case GameStage.Medium:  // booster 27%, shovel 25%, flashlight 12%, repair 12%, turret 16%, shield 8%
+                    return r < 0.27 ? PickupKind.Booster : r < 0.52 ? PickupKind.Shovel : r < 0.64 ? PickupKind.Flashlight
+                         : r < 0.76 ? PickupKind.Repair : r < 0.92 ? PickupKind.Turret : PickupKind.Shield;
+                default:                // booster 26%, shovel 20%, flashlight 12%, repair 12%, turret 22%, shield 8%
+                    return r < 0.26 ? PickupKind.Booster : r < 0.46 ? PickupKind.Shovel : r < 0.58 ? PickupKind.Flashlight
+                         : r < 0.70 ? PickupKind.Repair : r < 0.92 ? PickupKind.Turret : PickupKind.Shield;
             }
         }
 

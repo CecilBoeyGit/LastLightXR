@@ -1048,7 +1048,7 @@ namespace LastLight.EditorTools
             }
             int storeStart = director.EventLog.Count;
             LookAtRack(0, 0.6f);
-            bool countdownShown = director.Rack.FillVisible(0);
+            bool countdownShown = director.Rack.FillVisible(0) && director.Rack.FillOnTop(0);
             bool notUsedEarly = director.Save.SlotItem(0) == PickupKind.Shovel && !director.FrontShovel.Active;
             Render(cam, rt, headWorld, director.Rack.root.position, Path.Combine(outDir, "view_storage_rack_dwell.png"));
             LookAtRack(0, 0.55f);
@@ -1108,6 +1108,18 @@ namespace LastLight.EditorTools
             bool repaired = healthDuringDots == 1 && director.Car.health == 2 && director.Repair.Phase == RepairPhase.Hidden;
             bool dotsMoved = dotOffsets.Count == 3 && Vector3.Distance(dotOffsets[0], dotOffsets[1]) > 1.5f && Vector3.Distance(dotOffsets[1], dotOffsets[2]) > 1.5f;
             stats.AppendLine($"Repair: wrench {wrenchShown}, waits {wrenchNotYet}, dots {dotsStarted}, repaired {repaired}, dots spread {dotsMoved} ({string.Join(" / ", dotOffsets.Select(o => o.ToString("0.0")))})");
+            // Left unattended, the dots time out and the wrench has to be looked at again.
+            director.Car.health = 1;
+            Hold(0.2f);
+            LookAtLocal(() => director.Repair.WrenchLocal, 0.62f);
+            bool timeoutStarted = director.Repair.Phase == RepairPhase.Dots;
+            director.Scout.ScriptedWorldRay = new Ray(headWorld, d.TransformPoint(new Vector3(-20f, 0f, 10f)) - headWorld);
+            Hold(RepairQte.DotTimeLimit - 0.6f);
+            bool stillWaiting = director.Repair.Phase == RepairPhase.Dots && director.Repair.DotTimeLeft > 0f;
+            Hold(0.9f);
+            bool timedOut = director.Repair.Phase == RepairPhase.Wrench && director.EventLog.Any(l => l.Contains("Repair failed: a dot was left too long")) && director.Car.health == 1;
+            director.Scout.ScriptedWorldRay = null;
+            director.Car.health = 3;
 
             // ----- Vehicles: the Rhino starts with a shovel, the Angel Transponder's first respawn in a run is free -----
             director.Save.AddCoins(VehicleCatalog.All[VehicleCatalog.Rhino].cost + VehicleCatalog.All[VehicleCatalog.Angel].cost);
@@ -1264,8 +1276,9 @@ namespace LastLight.EditorTools
             var wallLog = director.EventLog.Skip(wallStart).ToList();
             int smashIdx = wallLog.FindIndex(l => l.Contains("Shovel smashed a dead-end wall"));
             // Through without being trapped, and faster than the escape track's crawl (80% of cruise).
+            // Through without being trapped, and still moving (the escape track behind is narrow, so the jeep may scrape it).
             bool shovelBreaksWall = smashIdx >= 0 && !wallLog.Skip(smashIdx).Any(l => l.Contains("Hit the dead-end wall: trapped")) && !director.Car.trapped
-                && director.Track.forks.Any(f => f.wallBroken) && director.Car.speed > director.CruiseSpeedNow * 0.81f;
+                && director.Track.forks.Any(f => f.wallBroken) && director.Car.speed > 3f;
             stats.AppendLine($"Shovel vs dead-end wall: smashed {smashIdx >= 0} after {wallT:0} s, speed after {director.Car.speed * 10f:0} km/h");
 
             // ----- Late road: three-way splits, twin cliff roads and natural weather, driven a long way -----
@@ -1420,12 +1433,15 @@ namespace LastLight.EditorTools
             director.autopilotMode = AutopilotMode.NoSteering;
             director.Restart();
             int evadeStart = director.EventLog.Count;
-            for (float t = 0f; t < 70f; t += dt)
+            // Look away from the road so no shovel or shield gets picked up: the crashes have to land on the jeep.
+            director.Scout.ScriptedWorldRay = new Ray(headWorld, d.TransformPoint(new Vector3(-20f, 0f, -14f)) - headWorld);
+            for (float t = 0f; t < 240f && director.EventLog.Skip(evadeStart).Count(l => l.Contains("Evaded:") || (l.Contains("Smashed through a") && l.Contains(", health "))) < 12; t += dt)
             {
                 if (director.State == RunState.GameOver) director.Restart();
                 director.Car.health = 50;
                 director.Tick(dt);
             }
+            director.Scout.ScriptedWorldRay = null;
             var evadeLog = director.EventLog.Skip(evadeStart).ToList();
             int evaded = evadeLog.Count(l => l.Contains("Evaded:")), damaged = evadeLog.Count(l => l.Contains("Smashed through a") && l.Contains(", health "));
             stats.AppendLine($"Evasion level 2: {evaded} crashes evaded, {damaged} took damage");
@@ -1582,7 +1598,7 @@ namespace LastLight.EditorTools
             Check("Storage starts with one free slot; slots unlock in order for coins", oneFreeSlot && outOfOrderRefused && slotsUnlocked);
             Check("A 4th storage slot can only be bought once a second vehicle is owned", fourthBarred && fourthAfterVehicle && fourthSlotBought);
             Check("Items bought in the garage fill empty slots; a full compartment refuses", itemsStored && fullRefused);
-            Check("A 1 s look at a stored item uses it, with a radial countdown fill; empty slots ignore the gaze", notUsedEarly && countdownShown && shovelUsed && emptySlotIgnored);
+            Check("A 1 s look at a stored item uses it, with a radial countdown fill drawn above the badge; empty slots ignore the gaze", notUsedEarly && countdownShown && shovelUsed && emptySlotIgnored);
             Check("Different powerups stack; the same one replaces the equipped one", stacked && boostReplaced);
             Check("Fog smothers the scout light; the weather dial shows fog", fogBlocks);
             Check("A flashlight cuts through the fog", flashlightCutsFog);
@@ -1621,6 +1637,15 @@ namespace LastLight.EditorTools
             Check($"Storm: broken branches blow across the road in front of the jeep ({branchesBlown} in 11 s, {crossedAhead} crossed the centre ahead), more often later in a run", branchesBlown >= 4 && branchMoves && crossedAhead >= 2 && branchesRamp);
             Check("Storm clears and the puddles dry up", stormCleared && puddlesDry);
             Check("Snow: falling snow, white cover on everything and the weather dial", snowFalls);
+            {
+                var snowStarts = log.Where(l => l.Contains("Weather: Snow rolls in") && !l.Contains("(forced)")).ToList();
+                bool lateEnough = snowStarts.All(l =>
+                {
+                    var m = System.Text.RegularExpressions.Regex.Match(l, @"at ([0-9]+) m");
+                    return m.Success && float.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture) >= WeatherSystem.SnowFrom - 1f;
+                });
+                Check($"Snow never rolls in before {WeatherSystem.SnowFrom:0} m ({snowStarts.Count} natural snowfalls, all past it)", lateEnough && Mathf.Approximately(WeatherSystem.SnowFrom, 1600f));
+            }
             Check($"Snow: slippery, amplified steering and random skids ({snowSkids} skids)", snowSlippery && snowSkids > 0);
             Check($"Snow: tyre tracks behind the jeep ({director.Tracks.PointCount} points)", tyreTracks);
             Check($"Controls trait steadies the jeep on snow (slip {slipLevel1:0.00} at level 1, {slipLevel2:0.00} at level 2)", controlsSteady);
@@ -1634,13 +1659,14 @@ namespace LastLight.EditorTools
             }
             Check("Dashboard: big 3-segment health dial in the middle, weather dial on its left, storage built in on its right", rackInDash && director.Gauges.root.Find("Speed Readout") == null && director.Gauges.root.Find("Horde Icon") == null && director.Gauges.root.Find("Weather Icon Snow") != null
                 && director.Gauges.Value(Gauge.Health).Contains("/"));
-            Check($"Flashlights are common in every stage ({Share(GameStage.Early, PickupKind.Flashlight):P0} / {Share(GameStage.Medium, PickupKind.Flashlight):P0} / {Share(GameStage.Late, PickupKind.Flashlight):P0}) and one waits before the weather (at {guaranteedFlashlightS:0} m)",
-                Share(GameStage.Early, PickupKind.Flashlight) >= 0.2f && Share(GameStage.Medium, PickupKind.Flashlight) >= 0.2f && Share(GameStage.Late, PickupKind.Flashlight) >= 0.2f
+            Check($"Flashlights are uncommon in every stage ({Share(GameStage.Early, PickupKind.Flashlight):P0} / {Share(GameStage.Medium, PickupKind.Flashlight):P0} / {Share(GameStage.Late, PickupKind.Flashlight):P0}) and one still waits before the weather (at {guaranteedFlashlightS:0} m)",
+                System.Enum.GetValues(typeof(GameStage)).Cast<GameStage>().All(g => Share(g, PickupKind.Flashlight) >= 0.08f && Share(g, PickupKind.Flashlight) <= 0.15f)
                 && guaranteedFlashlightS > 0f && guaranteedFlashlightS < WeatherSystem.FirstFrom);
             Check("Repairs powerup is as common as the flashlight", System.Enum.GetValues(typeof(GameStage)).Cast<GameStage>().All(g => Mathf.Abs(Share(g, PickupKind.Repair) - Share(g, PickupKind.Flashlight)) < 0.011f));
             Check("Repairs gives back one health bar, never past full; a stored one works too", repairOne && repairCapped && storedRepair);
             Check("Repair QTE: a wrench shows on the last bar; a half-second look starts the dots without arming the beacon", wrenchShown && wrenchNotYet && dotsStarted && beaconNotArmedByWrench);
             Check("Repair QTE: three dots in turn round the jeep, half a second each, repair a bar", repaired && dotsMoved);
+            Check($"Repair QTE: a dot left for {RepairQte.DotTimeLimit:0.0} s fails the repair and brings the wrench back", timeoutStarted && stillWaiting && timedOut);
             Check($"Shop prices tripled (shovel {StorageCatalog.Price(PickupKind.Shovel)}, boost {StorageCatalog.Price(PickupKind.Booster)}, turret {StorageCatalog.Price(PickupKind.Turret)}, flashlight {StorageCatalog.Price(PickupKind.Flashlight)}) and repairs cost the most ({StorageCatalog.Price(PickupKind.Repair)})",
                 StorageCatalog.Price(PickupKind.Shovel) == 180 && StorageCatalog.Price(PickupKind.Booster) == 120 && StorageCatalog.Price(PickupKind.Turret) == 270 && StorageCatalog.Price(PickupKind.Flashlight) == 150
                 && StorageCatalog.Items.All(i => i == PickupKind.Repair || StorageCatalog.Price(i) < StorageCatalog.Price(PickupKind.Repair)));

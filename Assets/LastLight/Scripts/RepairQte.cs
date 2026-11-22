@@ -16,6 +16,8 @@ namespace LastLight
         public const float WrenchSeconds = 0.5f;
         public const float DotSeconds = 0.5f;
         public const int DotCount = 3;
+        /// <summary>Seconds each dot waits to be looked at before the repair fails and the wrench comes back.</summary>
+        public const float DotTimeLimit = 2.5f;
         const float WrenchHeight = 2.3f;
         const float WrenchScale = 0.6f;
         const float WrenchRadius = 1.2f, DotRadius = 1.15f;     // game units around the target that count as looking
@@ -33,7 +35,9 @@ namespace LastLight
         public Vector3 DotOffset => dotOffset;
         public bool WantsGaze => Phase != RepairPhase.Hidden;
 
-        public System.Action OnWrenchShown, OnStarted, OnCancelled;
+        public System.Action OnWrenchShown, OnStarted, OnCancelled, OnTimedOut;
+        /// <summary>Seconds left on the current dot before the repair fails.</summary>
+        public float DotTimeLeft => dotTimer;
         public System.Action<int> OnDotCleared;
 
         readonly Transform wrench, dot, ring;
@@ -44,7 +48,7 @@ namespace LastLight
         readonly MaterialPropertyBlock mpb = new MaterialPropertyBlock();
         System.Random rng = new System.Random(1);
         Vector3 dotOffset;
-        float lastAngle, lost, time, popTime;
+        float lastAngle, lost, time, popTime, dotTimer;
 
         public RepairQte(Transform parent, Material glowMat, Material spriteMat = null)
         {
@@ -142,6 +146,18 @@ namespace LastLight
             else
             {
                 DotLocal = carLocal + dotOffset;
+                // Left unattended, the repair fails: back to the wrench, to start again.
+                dotTimer -= dt;
+                if (dotTimer <= 0f)
+                {
+                    Phase = RepairPhase.Wrench;
+                    Dwell = 0f;
+                    lost = 0f;
+                    popTime = 0f;
+                    OnTimedOut?.Invoke();
+                    Draw(headLocal);
+                    return false;
+                }
                 if (Stare(dt, gaze, DotLocal, DotRadius, DotSeconds))
                 {
                     OnDotCleared?.Invoke(DotIndex);
@@ -194,6 +210,7 @@ namespace LastLight
             dotOffset = new Vector3(Mathf.Sin(a) * dist, height, Mathf.Cos(a) * dist);
             Dwell = 0f;
             popTime = 0f;
+            dotTimer = DotTimeLimit;
         }
 
         void Draw(Vector3 headLocal)
@@ -231,6 +248,12 @@ namespace LastLight
             mb.Clear();
             mb.Arc(Vector3.zero, r, r + 0.06f, 1f, 40, new Color(1f, 1f, 1f, 0.35f));
             if (Dwell > 0.01f) mb.Arc(Vector3.zero, r - 0.05f, r + 0.22f, Dwell / seconds, 40, Color.white);
+            // The dot's time limit: a thin outer ring that runs down, faint while there's plenty left.
+            if (!wrenchUp)
+            {
+                float left = Mathf.Clamp01(dotTimer / DotTimeLimit);
+                mb.Arc(Vector3.zero, r + 0.32f, r + 0.42f, left, 40, new Color(1f, 1f, 1f, left > 0.4f ? 0.55f : 0.55f + 0.45f * Mathf.Abs(Mathf.Sin(time * 14f))));
+            }
             if (!wrenchUp)
                 for (int i = 0; i < DotCount; i++)
                 {
