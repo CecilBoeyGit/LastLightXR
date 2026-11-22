@@ -37,7 +37,7 @@ Material:
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _RockMap:
-        m_Texture: {fileID: 2800000, guid: e86ee5a0d6b02446ba2e9ba9fec05e65, type: 3}
+        m_Texture: {fileID: 2800000, guid: ca891b2ba8c594de5868696e42d46cc9, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     m_Ints: []
@@ -57,13 +57,13 @@ Material:
     - _TexColor: 0
     m_Colors:
     - _DirtColor: {r: 0.34117648, g: 0.25490198, b: 0.1882353, a: 1}
-    - _DirtMean: {r: 0.05445411, g: 0.025297668, b: 0.015401579, a: 1}
+    - _DirtMean: {r: 0.040843498, g: 0.018192008, b: 0.010934146, a: 1}
     - _GrassColor: {r: 0.27058825, g: 0.38431373, b: 0.22745098, a: 1}
-    - _GrassMean: {r: 0.037613634, g: 0.05632637, b: 0.0044019017, a: 1}
+    - _GrassMean: {r: 0.028712766, g: 0.061045703, b: 0.0016887229, a: 1}
     - _RoadColor: {r: 0.5176471, g: 0.39215687, b: 0.2627451, a: 1}
-    - _RoadMean: {r: 0.5042788, g: 0.20619334, b: 0.04469571, a: 1}
+    - _RoadMean: {r: 0.31953156, g: 0.12324409, b: 0.042806827, a: 1}
     - _RockColor: {r: 0.41960785, g: 0.38039216, b: 0.32941177, a: 1}
-    - _RockMean: {r: 0.05445411, g: 0.025297668, b: 0.015401579, a: 1}
+    - _RockMean: {r: 0.14417002, g: 0.09799204, b: 0.0823575, a: 1}
     - _ScanColor: {r: 0.34999996, g: 0.9, b: 1, a: 1}
     - _Tint: {r: 1, g: 1, b: 1, a: 1}
   m_BuildTextureStacks: []
