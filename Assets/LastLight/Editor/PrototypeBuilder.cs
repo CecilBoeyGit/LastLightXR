@@ -1075,7 +1075,7 @@ namespace LastLight.EditorTools
             director.ScriptedRightHand = null;
             stats.AppendLine($"Beacon: grabbed {beaconGrabbed}, follows {beaconFollows} ({beaconToPinch:0.000}), returns {beaconReturns}; far pinch ignored {farPinchIgnored}, not armed early {notArmedYet}, armed {gazeArmed}, gaze grabbed {gazeGrabbed}, flew {flewToPinch}, steers {steersAfterFly}");
 
-            // ----- Storage compartment in a run: a second's look uses an item, as if its powerup were collected -----
+            // ----- Storage compartment in a run: a half-second look uses an item, as if its powerup were collected -----
             director.Restart();
             director.Car.invulnerable = 1e6f;
             Hold(0.5f);
@@ -1085,23 +1085,23 @@ namespace LastLight.EditorTools
                 Hold(seconds);
             }
             int storeStart = director.EventLog.Count;
-            LookAtRack(0, 0.6f);
+            LookAtRack(0, 0.3f);
             bool countdownShown = director.Rack.FillVisible(0) && director.Rack.FillOnTop(0);
             bool notUsedEarly = director.Save.SlotItem(0) == PickupKind.Shovel && !director.FrontShovel.Active;
             Render(cam, rt, headWorld, director.Rack.root.position, Path.Combine(outDir, "view_storage_rack_dwell.png"));
-            LookAtRack(0, 0.55f);
+            LookAtRack(0, 0.28f);
             bool shovelUsed = director.Save.SlotItem(0) == null && director.FrontShovel.Active && director.FrontShovel.HitsLeft == Shovel.MaxHits;
             LookAtRack(0, 1.3f);
             bool emptySlotIgnored = director.EventLog.Skip(storeStart).Count(l => l.Contains("Used a stored")) == 1;
-            LookAtRack(1, 1.15f);
+            LookAtRack(1, 0.65f);
             bool stacked = director.Turret.Active && director.FrontShovel.Active && director.Save.SlotItem(1) == null;
             director.GrantPowerup(PickupKind.Booster);
             Hold(2f);
             float boostBefore = director.BoostTime;
-            LookAtRack(2, 1.15f);
+            LookAtRack(2, 0.65f);
             bool boostReplaced = director.BoostTime > boostBefore + 1.5f && director.EventLog.Skip(storeStart).Any(l => l.Contains("stored speed boost") && l.Contains("replaced"));
             director.Car.health = 2;
-            LookAtRack(3, 1.15f);
+            LookAtRack(3, 0.65f);
             bool storedRepair = director.Car.health == 3 && director.Save.SlotItem(3) == null;
             bool rackInDash = director.Rack.root.parent == director.Gauges.root && director.Rack.root.localPosition.x > 3f;
             director.Scout.ScriptedWorldRay = null;
@@ -1636,7 +1636,7 @@ namespace LastLight.EditorTools
             Check("Storage starts with one free slot; slots unlock in order for coins", oneFreeSlot && outOfOrderRefused && slotsUnlocked);
             Check("A 4th storage slot can only be bought once a second vehicle is owned", fourthBarred && fourthAfterVehicle && fourthSlotBought);
             Check("Items bought in the garage fill empty slots; a full compartment refuses", itemsStored && fullRefused);
-            Check("A 1 s look at a stored item uses it, with a radial countdown fill drawn above the badge; empty slots ignore the gaze", notUsedEarly && countdownShown && shovelUsed && emptySlotIgnored);
+            Check($"A {StorageCatalog.UseSeconds:0.0} s look at a stored item uses it, with a radial countdown fill drawn above the badge; empty slots ignore the gaze", notUsedEarly && countdownShown && shovelUsed && emptySlotIgnored);
             Check("Different powerups stack; the same one replaces the equipped one", stacked && boostReplaced);
             Check("Fog smothers the scout light; the weather dial shows fog", fogBlocks);
             Check("A flashlight cuts through the fog", flashlightCutsFog);

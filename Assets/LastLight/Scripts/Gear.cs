@@ -81,7 +81,10 @@ namespace LastLight
 
             muzzle = new GameObject("Muzzle").transform;
             muzzle.SetParent(pitchPivot, false);
-            muzzle.localPosition = new Vector3(0f, 0f, 0.85f);
+            // At the tip of the Tripo turret's barrel (its centre is 59% of the model's height up), else the procedural barrels' ends.
+            muzzle.localPosition = model.Ready
+                ? new Vector3(0f, model.mesh.bounds.size.y * 0.59f - yawPivot.localPosition.y - pitchPivot.localPosition.y, model.mesh.bounds.max.z - pitchPivot.localPosition.z)
+                : new Vector3(0f, 0f, 0.85f);
             mb.Orb(Vector3.zero, 0.22f, new Color(1f, 0.85f, 0.4f, 1f));
             mb.Orb(Vector3.zero, 0.42f, new Color(1f, 0.6f, 0.2f, 0.4f));
             flash = MeshBuilder.Spawn("Muzzle Flash", muzzle, mb.ToMesh("LL_MuzzleFlash"), glowMat);

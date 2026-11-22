@@ -509,25 +509,25 @@
       "category": "gear",
       "prompt": null,
       "input_images": {
-        "front": "Tools/Tripo/inputs/roof_turret/roof_turret_front.png",
-        "left": "Tools/Tripo/inputs/roof_turret/roof_turret_left.png",
-        "right": "Tools/Tripo/inputs/roof_turret/roof_turret_right.png",
-        "back": "Tools/Tripo/inputs/roof_turret/roof_turret_back.png"
+        "front": "Tools/Tripo/inputs/roof_turret_v2/roof_turret_v2_front.png",
+        "left": "Tools/Tripo/inputs/roof_turret_v2/roof_turret_v2_left.png",
+        "right": "Tools/Tripo/inputs/roof_turret_v2/roof_turret_v2_right.png",
+        "back": "Tools/Tripo/inputs/roof_turret_v2/roof_turret_v2_back.png"
       },
-      "model": "web: HD Model, H3.1 Best Quality, multi-view; Retopo triangle 2000 (Smart Mesh P1.0) -> 2237 tris",
-      "face_limit": 2000,
+      "model": "web: HD Model, H3.1 Best Quality, multi-view; Retopo triangle 2200 (Smart Mesh P1.0) -> 2249 tris",
+      "face_limit": 2200,
       "texture_size": 1024,
       "rig": false,
       "animations": [],
       "unity": {
         "prefab": "LL_RoofTurret",
-        "replaces_placeholder": "procedural turret (Gear TurretBase/Head/Barrels) (not yet swapped)",
+        "replaces_placeholder": "procedural turret (Gear TurretBase/Head/Barrels); turns whole on the yaw pivot",
         "max_texture_size": 512,
         "material": "LL_RoofTurret.mat (LastLight/DioramaTextured, _BaseMap = Textures/LL_RoofTurret_BaseColor.png)",
         "import": "Set by Assets/LastLight/Editor/PropModelSetup.cs: no rig, no animation, no imported materials",
         "collider": "none"
       },
-      "notes": "Twin-barrel roof gun on a swivel base. Sheets from the Last Light ChatGPT session; generated on studio.tripo3d.ai (web credits only; the CLI must skip it). Run record in Tools/Tripo/runs/roof_turret/web/web.json."
+      "notes": "Single-barrel roof gun on a flanged pedestal, from the turret powerup icon (pu_turret.png). Sheet v2 from the Last Light ChatGPT session; the first twin-barrel sheet in inputs/roof_turret is deprecated. Generated on studio.tripo3d.ai (web credits only; the CLI must skip it), task 26a0a122-ca43-4e4c-80a9-bab17e89c6e4. Run record in Tools/Tripo/runs/roof_turret/web_v2/web.json."
     },
     {
       "id": "plough_shovel",
