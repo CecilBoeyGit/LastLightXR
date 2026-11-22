@@ -41,15 +41,23 @@ namespace LastLight
             rain.volume = 0f;
             rain.clip = Noise("rain", 2f, 0.35f, 9f, true);
 
-            // The BGM loops, rendered offline by Tools/Audio/render_bgm.py (run) and render_menu_bgm.py (menu).
-            // Both stream, so they cost little memory.
+            // The BGM loops, rendered offline by the scripts in Tools/Audio. They stream, so they cost little memory.
+            // The run family (run, low health, horde) share tempo, length and chords, and play together in sync.
             runMusic = MusicSource(host, "LastLightAudio/LL_BGM_Run");
+            lowHealthMusic = MusicSource(host, "LastLightAudio/LL_BGM_LowHealth");
+            hordeMusic = MusicSource(host, "LastLightAudio/LL_BGM_Horde");
             menuMusic = MusicSource(host, "LastLightAudio/LL_BGM_Menu");
         }
 
-        const float MusicRun = 0.34f, MusicPaused = 0.12f, MusicGameOver = 0.07f, MusicMenu = 0.3f;
-        const float MusicFade = 0.4f;   // volume per second, so a crossfade takes about a second
-        readonly AudioSource runMusic, menuMusic;
+        // Full levels for each loop; the low-health loop is denser in the bass, so it sits a little lower.
+        const float MusicRun = 0.34f, MusicLowHealth = 0.3f, MusicHorde = 0.34f, MusicMenu = 0.3f;
+        const float PausedScale = 0.35f, GameOverScale = 0.2f;   // the run family on pause and on the run-over panel
+        const float MusicFade = 0.4f;     // volume per second between menu and run: a crossfade of about a second
+        const float DangerFadeIn = 0.9f;  // into a danger loop quickly, so it lands with the danger
+        const float DangerFadeOut = 0.35f;
+        const float HordeCloseEnter = 0.3f, HordeCloseExit = 0.4f;   // fractions of the full lead (as the HUD warning)
+        readonly AudioSource runMusic, lowHealthMusic, hordeMusic, menuMusic;
+        bool runFamilyPlaying, hordeClose;
 
         static AudioSource MusicSource(GameObject host, string clip)
         {
@@ -64,23 +72,66 @@ namespace LastLight
         }
 
         /// <summary>
-        /// Crossfades between the menu loop (main menu, tutorial, garage) and the run loop, easing the run loop's
-        /// volume by state: full on a run, softer on pause, nearly gone on the run-over panel. A loop that fades
-        /// out stops, so it starts again from the top next time.
+        /// Crossfades between the menu loop (main menu, tutorial, garage) and the run family. Within a run the
+        /// three run loops play in lockstep and only their volumes move: the horde loop takes over while the horde is
+        /// close (lead under 30% of the full gap, released above 40%), otherwise the low-health loop while the jeep is
+        /// down to one bar, otherwise the run loop. The family plays softer on pause (and in the pause menu) and nearly gone on the run-over
+        /// panel. A loop that fades out stops, so it starts again from the top next time.
         /// </summary>
-        public void TickMusic(RunState state, float dt)
+        /// <param name="health">The jeep's health in bars.</param>
+        /// <param name="hordeLead">The lead on the horde as a fraction of the full lead (Gap / maxGap).</param>
+        public void TickMusic(RunState state, float dt, int health, float hordeLead)
         {
             if (!Application.isPlaying) return;
             bool menu = state == RunState.Menu || state == RunState.Tutorial || state == RunState.Garage;
-            float run = state switch
+            // Any other state mid-run (Paused, the pause menu) counts as paused: the music drops but keeps its place.
+            bool live = !menu && state != RunState.GameOver;
+            hordeClose = live && (hordeClose ? hordeLead < HordeCloseExit : hordeLead < HordeCloseEnter);
+            bool lowHealth = live && health == 1;
+            float scale = menu ? 0f : state switch
             {
-                RunState.Running => MusicRun,
-                RunState.Paused => MusicPaused,
-                RunState.GameOver => MusicGameOver,
-                _ => 0f,
+                RunState.Running => 1f,
+                RunState.GameOver => GameOverScale,
+                _ => PausedScale,
             };
-            FadeMusic(runMusic, menu ? 0f : run, dt);
+
+            float run = 0f, low = 0f, horde = 0f;
+            if (hordeClose) horde = MusicHorde * scale;
+            else if (lowHealth) low = MusicLowHealth * scale;
+            else run = MusicRun * scale;
+
+            if (!menu && !runFamilyPlaying) StartRunFamily();
+            // Danger loops come in fast and leave slowly; the run loop gets out of the way just as fast.
+            FadeLayer(runMusic, run, dt, DangerFadeOut, DangerFadeIn);
+            FadeLayer(lowHealthMusic, low, dt, DangerFadeIn, DangerFadeOut);
+            FadeLayer(hordeMusic, horde, dt, DangerFadeIn, DangerFadeOut);
+            if (menu && runFamilyPlaying && runMusic.volume <= 0f && lowHealthMusic.volume <= 0f && hordeMusic.volume <= 0f)
+            {
+                runMusic.Stop();
+                lowHealthMusic.Stop();
+                hordeMusic.Stop();
+                runFamilyPlaying = false;
+            }
             FadeMusic(menuMusic, menu ? MusicMenu : 0f, dt);
+        }
+
+        /// <summary>Starts the three run loops on the same audio clock tick, so they stay sample-locked.</summary>
+        void StartRunFamily()
+        {
+            double start = AudioSettings.dspTime + 0.1;
+            foreach (var s in new[] { runMusic, lowHealthMusic, hordeMusic })
+            {
+                if (s.clip == null) continue;
+                s.volume = 0f;
+                s.PlayScheduled(start);
+            }
+            runFamilyPlaying = true;
+        }
+
+        static void FadeLayer(AudioSource s, float target, float dt, float upSpeed, float downSpeed)
+        {
+            if (s.clip == null) return;
+            s.volume = Mathf.MoveTowards(s.volume, target, (target > s.volume ? upSpeed : downSpeed) * dt);
         }
 
         static void FadeMusic(AudioSource s, float target, float dt)

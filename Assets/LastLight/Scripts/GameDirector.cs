@@ -684,7 +684,7 @@ namespace LastLight
             scout.Fog = weather.FogAmount;
             float storm = weather.StormAmount;
             sound?.SetRain(running ? storm * 0.35f : 0f);
-            sound?.TickMusic(State, dt);
+            sound?.TickMusic(State, dt, car.health, Gap / maxGap);
             track.SetWetness(weather.Wetness);
 
             float stability = TraitCatalog.ControlsStability(progress.ActiveTraitLevel(Trait.Controls));
