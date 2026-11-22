@@ -260,6 +260,7 @@ namespace LastLight.EditorTools
                     foreach (var p in verts) floor = Mathf.Min(floor, p.y);
                 }
                 for (int i = 0; i < verts.Count; i++) verts[i] = new Vector3(verts[i].x, verts[i].y - floor, verts[i].z);
+                if (garage) RepairPlatform(verts, norms, uvs, tris);
 
                 Mesh mesh = null;
                 foreach (var sub in AssetDatabase.LoadAllAssetsAtPath(AssetDatabase.GetAssetPath(owner)))
@@ -281,6 +282,209 @@ namespace LastLight.EditorTools
                 return mesh;
             }
             finally { Object.DestroyImmediate(inst); }
+        }
+
+        /// <summary>
+        /// Patches the Tripo garage's central platform, where the retopology left wedge-shaped gaps in the turntable:
+        /// flat platform faces wound downward are flipped back (they were being culled from above), upward faces with
+        /// downward normals get upward ones, and open edge loops
+        /// that lie flat on the platform are capped with an upward-facing fan. Runs on the fitted mesh (turntable top at
+        /// y = 0, 21 units across), so the platform test is in game units.
+        /// </summary>
+        static void RepairPlatform(System.Collections.Generic.List<Vector3> verts, System.Collections.Generic.List<Vector3> norms,
+            System.Collections.Generic.List<Vector2> uvs, System.Collections.Generic.List<int> tris)
+        {
+            const float PlatformRadius = GarageWidth * 0.36f;   // the floor and turntable, inside the walls
+            const float FlatTolerance = 0.9f;                   // a hole whose rim spans more height than this is not a floor hole
+
+            // 1. Platform faces wound backwards: flat faces on the floor or turntable whose winding points down, so they
+            //    are culled when seen from above. Their vertex normals already point up, so only the winding changes.
+            int flipped = 0, darkNormals = 0;
+            for (int t = 0; t < tris.Count; t += 3)
+            {
+                Vector3 a = verts[tris[t]], b = verts[tris[t + 1]], c = verts[tris[t + 2]];
+                bool onPlatform = true;
+                foreach (var p in new[] { a, b, c })
+                    if (new Vector2(p.x, p.z).magnitude > PlatformRadius || p.y < -1.5f || p.y > 0.6f) onPlatform = false;
+                if (!onPlatform) continue;
+                Vector3 fn = Vector3.Cross(b - a, c - a);
+                if (fn.sqrMagnitude < 1e-12f) continue;
+                fn.Normalize();
+                if (fn.y < -0.8f)
+                {
+                    (tris[t + 1], tris[t + 2]) = (tris[t + 2], tris[t + 1]);
+                    flipped++;
+                }
+                else if (fn.y > 0.8f)
+                {
+                    // Upward faces shaded as if facing down read as black wedges too.
+                    for (int k = 0; k < 3; k++)
+                        if (norms[tris[t + k]].y < 0f) { norms[tris[t + k]] = Vector3.up; darkNormals++; }
+                }
+            }
+
+            // 2. Weld by position (Tripo splits vertices at UV seams), then find edges used by only one triangle.
+            var weld = new int[verts.Count];
+            var keyToId = new System.Collections.Generic.Dictionary<Vector3Int, int>();
+            var rep = new System.Collections.Generic.List<int>();   // a representative vertex per welded id
+            for (int i = 0; i < verts.Count; i++)
+            {
+                var k = Vector3Int.RoundToInt(verts[i] * 2000f);
+                if (!keyToId.TryGetValue(k, out int id)) { id = rep.Count; keyToId[k] = id; rep.Add(i); }
+                weld[i] = id;
+            }
+            var edgeUse = new System.Collections.Generic.Dictionary<long, int>();
+            long Key(int x, int y) => x < y ? ((long)x << 32) | (uint)y : ((long)y << 32) | (uint)x;
+            for (int t = 0; t < tris.Count; t += 3)
+                for (int e = 0; e < 3; e++)
+                {
+                    int x = weld[tris[t + e]], y = weld[tris[t + (e + 1) % 3]];
+                    if (x == y) continue;
+                    long k = Key(x, y);
+                    edgeUse[k] = edgeUse.TryGetValue(k, out int n) ? n + 1 : 1;
+                }
+            // Directed boundary edges, as the triangles wind them; a hole's rim follows them head to tail. Several can leave
+            // one vertex: the turntable's wedges all meet at its centre, each leaving a thin sliver open there.
+            var outgoing = new System.Collections.Generic.Dictionary<int, System.Collections.Generic.List<int>>();
+            for (int t = 0; t < tris.Count; t += 3)
+                for (int e = 0; e < 3; e++)
+                {
+                    int x = weld[tris[t + e]], y = weld[tris[t + (e + 1) % 3]];
+                    if (x == y || edgeUse[Key(x, y)] != 1) continue;
+                    if (!outgoing.TryGetValue(x, out var list)) outgoing[x] = list = new System.Collections.Generic.List<int>();
+                    list.Add(y);
+                }
+            Vector2 Flat(int id) => new Vector2(verts[rep[id]].x, verts[rep[id]].z);
+
+            // 3. Walk each loop; where several rim edges leave a vertex, take the one closest in direction to the edge we
+            //    came in on (a sliver's two long sides run almost parallel). Cap the loops lying flat on the platform.
+            int capped = 0, skipped = 0;
+            var used = new System.Collections.Generic.HashSet<long>();
+            long Dir(int x, int y) => ((long)x << 32) | (uint)y;
+            foreach (var kv in outgoing)
+                foreach (int first in kv.Value)
+                {
+                    int s0 = kv.Key;
+                    if (used.Contains(Dir(s0, first))) continue;
+                    var loop = new System.Collections.Generic.List<int> { s0 };
+                    used.Add(Dir(s0, first));
+                    int prev = s0, cur = first;
+                    bool closed = false;
+                    while (loop.Count < 4000)
+                    {
+                        if (cur == s0) { closed = true; break; }
+                        loop.Add(cur);
+                        if (!outgoing.TryGetValue(cur, out var outs)) break;
+                        Vector2 back = (Flat(prev) - Flat(cur)).normalized;
+                        int pick = -1;
+                        float bestAngle = float.MaxValue;
+                        foreach (int cand in outs)
+                        {
+                            if (used.Contains(Dir(cur, cand))) continue;
+                            float ang = Vector2.Angle(back, (Flat(cand) - Flat(cur)).normalized);
+                            if (ang < bestAngle) { bestAngle = ang; pick = cand; }
+                        }
+                        if (pick < 0) break;
+                        used.Add(Dir(cur, pick));
+                        prev = cur;
+                        cur = pick;
+                    }
+                    if (!closed || loop.Count < 3) { skipped++; continue; }
+                    float minY = float.MaxValue, maxY = float.MinValue, maxR = 0f;
+                    Vector3 centre = Vector3.zero;
+                    foreach (int id in loop)
+                    {
+                        Vector3 p = verts[rep[id]];
+                        centre += p;
+                        minY = Mathf.Min(minY, p.y);
+                        maxY = Mathf.Max(maxY, p.y);
+                        maxR = Mathf.Max(maxR, new Vector2(p.x, p.z).magnitude);
+                    }
+                    if (maxR > PlatformRadius || maxY - minY > FlatTolerance) { skipped++; continue; }
+                    centre /= loop.Count;
+                    // The cap takes the texture of the rim vertex nearest its centre, so a sliver reads as the wedge beside it.
+                    int nearest = rep[loop[0]];
+                    foreach (int id in loop) if ((verts[rep[id]] - centre).sqrMagnitude < (verts[nearest] - centre).sqrMagnitude) nearest = rep[id];
+                    int c = verts.Count;
+                    verts.Add(centre);
+                    norms.Add(Vector3.up);
+                    uvs.Add(uvs[nearest]);
+                    for (int i = 0; i < loop.Count; i++)
+                    {
+                        int a = rep[loop[i]], b = rep[loop[(i + 1) % loop.Count]];
+                        // Wind each cap triangle so it faces up, the way the platform is seen.
+                        if (Vector3.Cross(verts[b] - verts[a], centre - verts[a]).y >= 0f) { tris.Add(a); tris.Add(b); tris.Add(c); }
+                        else { tris.Add(b); tris.Add(a); tris.Add(c); }
+                    }
+                    capped++;
+                }
+
+            // 4. The turntable is built as separate wedge slabs with their own side walls and nothing underneath, so the thin
+            //    gaps between wedges see straight through. A backing disc just under the turntable top, in the turntable's own
+            //    colour, closes them. Its centre is the hub where the wedges meet (the most connected vertex near the middle),
+            //    its radius the ring of side-wall vertices at the turntable's edge, measured from that hub.
+            var valence = new int[rep.Count];
+            for (int t = 0; t < tris.Count; t++) if (tris[t] < weld.Length) valence[weld[tris[t]]]++;   // caps added above aren't welded
+            int hub = -1;
+            for (int id = 0; id < rep.Count; id++)
+            {
+                Vector3 p = verts[rep[id]];
+                if (Mathf.Abs(p.y) > 0.15f || new Vector2(p.x, p.z).magnitude > GarageWidth * 0.15f) continue;
+                if (hub < 0 || valence[id] > valence[hub]) hub = id;
+            }
+            float rim = 0f;
+            Vector3 hubPos = hub >= 0 ? verts[rep[hub]] : Vector3.zero;
+            if (hub >= 0)
+            {
+                // Side walls: steep faces at turntable height. Their vertices pile up at the turntable's edge.
+                var bins = new int[40];
+                for (int t = 0; t < tris.Count; t += 3)
+                {
+                    Vector3 a = verts[tris[t]], b = verts[tris[t + 1]], c2 = verts[tris[t + 2]];
+                    Vector3 fn = Vector3.Cross(b - a, c2 - a);
+                    if (fn.sqrMagnitude < 1e-12f || Mathf.Abs(fn.normalized.y) > 0.4f) continue;
+                    foreach (var p in new[] { a, b, c2 })
+                    {
+                        if (p.y > 0.1f || p.y < -0.6f) continue;
+                        float r = new Vector2(p.x - hubPos.x, p.z - hubPos.z).magnitude;
+                        int bin = (int)(r / 0.15f);
+                        if (r > 2.4f && bin < bins.Length) bins[bin]++;
+                    }
+                }
+                int peak = 0;
+                for (int k = 0; k < bins.Length; k++) if (bins[k] > bins[peak]) peak = k;
+                if (bins[peak] > 0) rim = (peak + 0.5f) * 0.15f;
+            }
+            int sample = -1;
+            float best = float.MaxValue;
+            for (int i = 0; i < verts.Count; i++)
+            {
+                // A texel from the turntable's flat top, half way out from the hub.
+                float d = Mathf.Abs(new Vector2(verts[i].x - hubPos.x, verts[i].z - hubPos.z).magnitude - rim * 0.5f);
+                if (Mathf.Abs(verts[i].y - hubPos.y) < 0.05f && norms[i].y > 0.9f && d < best) { best = d; sample = i; }
+            }
+            if (rim > 1f && sample >= 0)
+            {
+                const int Segments = 48;
+                const float BackingDepth = 0.1f;
+                float discR = rim * 1.06f;   // the wedge walls end just inside the copper ring, which hides the disc's edge
+                Vector2 uv = uvs[sample];
+                int centre = verts.Count;
+                verts.Add(new Vector3(hubPos.x, hubPos.y - BackingDepth, hubPos.z)); norms.Add(Vector3.up); uvs.Add(uv);
+                for (int k = 0; k < Segments; k++)
+                {
+                    float ang = k * Mathf.PI * 2f / Segments;
+                    verts.Add(new Vector3(hubPos.x + Mathf.Cos(ang) * discR, hubPos.y - BackingDepth, hubPos.z + Mathf.Sin(ang) * discR));
+                    norms.Add(Vector3.up);
+                    uvs.Add(uv);
+                }
+                for (int k = 0; k < Segments; k++)
+                {
+                    int a = centre + 1 + k, b = centre + 1 + (k + 1) % Segments;
+                    tris.Add(centre); tris.Add(b); tris.Add(a);   // clockwise from above, so it faces up
+                }
+            }
+            Debug.Log($"[LastLight] Garage platform repair: {flipped} reversed faces flipped, {darkNormals} downward normals turned up, {capped} holes capped, {skipped} other open edge chains left (walls, outer rim); turntable hub {hubPos.ToString("0.00")} (valence {(hub >= 0 ? valence[hub] : 0)}), edge radius {rim:0.00}, backing disc {(rim > 1f && sample >= 0 ? "added" : "NOT added")}");
         }
 
         /// <summary>
@@ -337,6 +541,52 @@ namespace LastLight.EditorTools
                 return mesh;
             }
             finally { Object.DestroyImmediate(inst); }
+        }
+
+        /// <summary>
+        /// Renders the baked garage flat-lit against magenta from above and from the front, so any hole in the platform
+        /// shows as magenta. Writes Logs/LastLightPreview/garage_check_top.png and garage_check_front.png.
+        /// Batch: -executeMethod LastLight.EditorTools.SceneryModelSetup.RenderGarageCheckBatch
+        /// </summary>
+        public static void RenderGarageCheckBatch()
+        {
+            try
+            {
+                var asset = AssetDatabase.LoadAssetAtPath<SceneryModels>(AssetPath);
+                if (asset == null || asset.garageMesh == null) throw new System.Exception("No baked garage");
+                Shader.SetGlobalVector("_LL_Ambient", new Vector4(1f, 1f, 1f, 0f));
+                Shader.SetGlobalVector("_LL_Moon", new Vector4(0f, 1f, 0f, 0f));
+                Shader.SetGlobalVector("_LL_Disk", new Vector4(0f, 0f, 0f, 1000f));
+                Shader.SetGlobalVector("_LL_HeadPos", new Vector4(0f, -100f, 0f, 0.001f));
+                var go = new GameObject("Garage Check");
+                go.AddComponent<MeshFilter>().sharedMesh = asset.garageMesh;
+                go.AddComponent<MeshRenderer>().sharedMaterial = asset.garageMaterial;
+                var cam = new GameObject("Check Camera").AddComponent<Camera>();
+                cam.clearFlags = CameraClearFlags.SolidColor;
+                cam.backgroundColor = Color.magenta;
+                cam.fieldOfView = 40f;
+                var rt = new RenderTexture(1600, 1200, 24, RenderTextureFormat.ARGB32);
+                cam.targetTexture = rt;
+                string dir = Path.GetFullPath(Path.Combine(Application.dataPath, "..", "Logs", "LastLightPreview"));
+                Directory.CreateDirectory(dir);
+                void Shot(Vector3 eye, Vector3 at, string file)
+                {
+                    cam.transform.position = eye;
+                    cam.transform.LookAt(at);
+                    cam.Render();
+                    RenderTexture.active = rt;
+                    var tex = new Texture2D(rt.width, rt.height, TextureFormat.RGB24, false);
+                    tex.ReadPixels(new Rect(0, 0, rt.width, rt.height), 0, 0);
+                    tex.Apply();
+                    File.WriteAllBytes(Path.Combine(dir, file), tex.EncodeToPNG());
+                    Object.DestroyImmediate(tex);
+                }
+                Shot(new Vector3(0f, 16f, 0.01f), Vector3.zero, "garage_check_top.png");
+                Shot(new Vector3(0f, 9f, -14f), new Vector3(0f, -0.5f, 0f), "garage_check_front.png");
+                RenderTexture.active = null;
+                EditorApplication.Exit(0);
+            }
+            catch (System.Exception e) { Debug.LogException(e); EditorApplication.Exit(1); }
         }
 
         public static void ConfigureBatch()

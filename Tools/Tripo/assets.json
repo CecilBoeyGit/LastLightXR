@@ -341,6 +341,384 @@
       "notes": "Cream off-road ambulance with a red stripe, heartbeat logo and roof light bar, from Cecil's vehicle sheet. Generated on studio.tripo3d.ai (web credits only; the CLI must skip it). Run record in Tools/Tripo/runs/angel_transponder/web/web.json."
     },
     {
+      "id": "storm_branch",
+      "enabled": false,
+      "source": "web",
+      "category": "hazard",
+      "prompt": null,
+      "input_images": {
+        "front": "Tools/Tripo/inputs/storm_branch/storm_branch_front.png",
+        "left": "Tools/Tripo/inputs/storm_branch/storm_branch_left.png",
+        "right": "Tools/Tripo/inputs/storm_branch/storm_branch_right.png",
+        "back": "Tools/Tripo/inputs/storm_branch/storm_branch_back.png"
+      },
+      "model": "web: HD Model, H3.1 Best Quality, multi-view; Retopo triangle 1200 (Smart Mesh P1.0) -> 1164 tris",
+      "face_limit": 1200,
+      "texture_size": 1024,
+      "rig": false,
+      "animations": [],
+      "unity": {
+        "prefab": "LL_StormBranch",
+        "replaces_placeholder": "procedural storm branches (TrackGenerator branchMeshes) (not yet swapped)",
+        "max_texture_size": 512,
+        "material": "LL_StormBranch.mat (LastLight/DioramaTextured, _BaseMap = Textures/LL_StormBranch_BaseColor.png)",
+        "import": "Set by Assets/LastLight/Editor/PropModelSetup.cs: no rig, no animation, no imported materials",
+        "collider": "keep the gameplay hit volume in Hazard.cs"
+      },
+      "notes": "Snapped pine bough with needle clumps for storm crossings. Sheets from the Last Light ChatGPT session; generated on studio.tripo3d.ai (web credits only; the CLI must skip it). Run record in Tools/Tripo/runs/storm_branch/web/web.json."
+    },
+    {
+      "id": "falling_boulder",
+      "enabled": false,
+      "source": "web",
+      "category": "hazard",
+      "prompt": null,
+      "input_images": {
+        "front": "Tools/Tripo/inputs/falling_boulder/falling_boulder_front.png",
+        "left": "Tools/Tripo/inputs/falling_boulder/falling_boulder_left.png",
+        "right": "Tools/Tripo/inputs/falling_boulder/falling_boulder_right.png",
+        "back": "Tools/Tripo/inputs/falling_boulder/falling_boulder_back.png"
+      },
+      "model": "web: HD Model, H3.1 Best Quality, multi-view; Retopo triangle 800 (Smart Mesh P1.0) -> 926 tris",
+      "face_limit": 800,
+      "texture_size": 1024,
+      "rig": false,
+      "animations": [],
+      "unity": {
+        "prefab": "LL_FallingBoulder",
+        "replaces_placeholder": "procedural rockfall boulder (TrackGenerator boulderMesh) (not yet swapped)",
+        "max_texture_size": 512,
+        "material": "LL_FallingBoulder.mat (LastLight/DioramaTextured, _BaseMap = Textures/LL_FallingBoulder_BaseColor.png)",
+        "import": "Set by Assets/LastLight/Editor/PropModelSetup.cs: no rig, no animation, no imported materials",
+        "collider": "keep the gameplay hit volume in Hazard.cs"
+      },
+      "notes": "Round tumbling boulder for rockfalls. Sheets from the Last Light ChatGPT session; generated on studio.tripo3d.ai (web credits only; the CLI must skip it). Run record in Tools/Tripo/runs/falling_boulder/web/web.json."
+    },
+    {
+      "id": "road_barricade",
+      "enabled": false,
+      "source": "web",
+      "category": "hazard",
+      "prompt": null,
+      "input_images": {
+        "front": "Tools/Tripo/inputs/road_barricade/road_barricade_front.png",
+        "left": "Tools/Tripo/inputs/road_barricade/road_barricade_left.png",
+        "right": "Tools/Tripo/inputs/road_barricade/road_barricade_right.png",
+        "back": "Tools/Tripo/inputs/road_barricade/road_barricade_back.png"
+      },
+      "model": "web: HD Model, H3.1 Best Quality, multi-view; Retopo triangle 1500 (Smart Mesh P1.0) -> 1345 tris",
+      "face_limit": 1500,
+      "texture_size": 1024,
+      "rig": false,
+      "animations": [],
+      "unity": {
+        "prefab": "LL_RoadBarricade",
+        "replaces_placeholder": "procedural barricade (TrackGenerator barricadeMesh) (not yet swapped)",
+        "max_texture_size": 512,
+        "material": "LL_RoadBarricade.mat (LastLight/DioramaTextured, _BaseMap = Textures/LL_RoadBarricade_BaseColor.png)",
+        "import": "Set by Assets/LastLight/Editor/PropModelSetup.cs: no rig, no animation, no imported materials",
+        "collider": "keep the gameplay hit volume in Hazard.cs"
+      },
+      "notes": "Red and white striped barricade with amber lamps. Sheets from the Last Light ChatGPT session; generated on studio.tripo3d.ai (web credits only; the CLI must skip it). Run record in Tools/Tripo/runs/road_barricade/web/web.json."
+    },
+    {
+      "id": "coin",
+      "enabled": false,
+      "source": "web",
+      "category": "pickup",
+      "prompt": null,
+      "input_images": {
+        "front": "Tools/Tripo/inputs/coin/coin_front.png",
+        "left": "Tools/Tripo/inputs/coin/coin_left.png",
+        "right": "Tools/Tripo/inputs/coin/coin_right.png",
+        "back": "Tools/Tripo/inputs/coin/coin_back.png"
+      },
+      "model": "web: HD Model, H3.1 Best Quality, multi-view; Retopo triangle 600 (Smart Mesh P1.0) -> 581 tris",
+      "face_limit": 600,
+      "texture_size": 1024,
+      "rig": false,
+      "animations": [],
+      "unity": {
+        "prefab": "LL_Coin",
+        "replaces_placeholder": "procedural coin (Pickup coinMesh) (not yet swapped)",
+        "max_texture_size": 512,
+        "material": "LL_Coin.mat (LastLight/DioramaTextured, _BaseMap = Textures/LL_Coin_BaseColor.png)",
+        "import": "Set by Assets/LastLight/Editor/PropModelSetup.cs: no rig, no animation, no imported materials",
+        "collider": "none (pickup radius in Pickup.cs)"
+      },
+      "notes": "Thick gold coin with an embossed lantern, modelled upright. Sheets from the Last Light ChatGPT session; generated on studio.tripo3d.ai (web credits only; the CLI must skip it). Run record in Tools/Tripo/runs/coin/web/web.json."
+    },
+    {
+      "id": "fallen_log",
+      "enabled": false,
+      "source": "web",
+      "category": "hazard",
+      "prompt": null,
+      "input_images": {
+        "front": "Tools/Tripo/inputs/fallen_log/fallen_log_front.png",
+        "left": "Tools/Tripo/inputs/fallen_log/fallen_log_left.png",
+        "right": "Tools/Tripo/inputs/fallen_log/fallen_log_right.png",
+        "back": "Tools/Tripo/inputs/fallen_log/fallen_log_back.png"
+      },
+      "model": "web: HD Model, H3.1 Best Quality, multi-view; Retopo triangle 1500 (Smart Mesh P1.0) -> 1424 tris",
+      "face_limit": 1500,
+      "texture_size": 1024,
+      "rig": false,
+      "animations": [],
+      "unity": {
+        "prefab": "LL_FallenLog",
+        "replaces_placeholder": "procedural fallen log blocker (TrackGenerator logMesh1/fallenPineMesh) (not yet swapped)",
+        "max_texture_size": 512,
+        "material": "LL_FallenLog.mat (LastLight/DioramaTextured, _BaseMap = Textures/LL_FallenLog_BaseColor.png)",
+        "import": "Set by Assets/LastLight/Editor/PropModelSetup.cs: no rig, no animation, no imported materials",
+        "collider": "keep the gameplay hit volume in Hazard.cs"
+      },
+      "notes": "Fallen pine trunk with a root end and branch stubs. Sheets from the Last Light ChatGPT session; generated on studio.tripo3d.ai (web credits only; the CLI must skip it). Run record in Tools/Tripo/runs/fallen_log/web/web.json."
+    },
+    {
+      "id": "fallen_tree_wide",
+      "enabled": false,
+      "source": "web",
+      "category": "hazard",
+      "prompt": null,
+      "input_images": {
+        "front": "Tools/Tripo/inputs/fallen_tree_wide/fallen_tree_wide_front.png",
+        "left": "Tools/Tripo/inputs/fallen_tree_wide/fallen_tree_wide_left.png",
+        "right": "Tools/Tripo/inputs/fallen_tree_wide/fallen_tree_wide_right.png",
+        "back": "Tools/Tripo/inputs/fallen_tree_wide/fallen_tree_wide_back.png"
+      },
+      "model": "web: HD Model, H3.1 Best Quality, multi-view; Retopo triangle 2500 (Smart Mesh P1.0) -> 2608 tris",
+      "face_limit": 2500,
+      "texture_size": 1024,
+      "rig": false,
+      "animations": [],
+      "unity": {
+        "prefab": "LL_FallenTreeWide",
+        "replaces_placeholder": "procedural two-lane fallen tree (TrackGenerator logMesh2) (not yet swapped)",
+        "max_texture_size": 512,
+        "material": "LL_FallenTreeWide.mat (LastLight/DioramaTextured, _BaseMap = Textures/LL_FallenTreeWide_BaseColor.png)",
+        "import": "Set by Assets/LastLight/Editor/PropModelSetup.cs: no rig, no animation, no imported materials",
+        "collider": "keep the gameplay hit volume in Hazard.cs"
+      },
+      "notes": "Long fallen pine with needle clusters, blocks two lanes. Sheets from the Last Light ChatGPT session; generated on studio.tripo3d.ai (web credits only; the CLI must skip it). Run record in Tools/Tripo/runs/fallen_tree_wide/web/web.json."
+    },
+    {
+      "id": "roof_turret",
+      "enabled": false,
+      "source": "web",
+      "category": "gear",
+      "prompt": null,
+      "input_images": {
+        "front": "Tools/Tripo/inputs/roof_turret/roof_turret_front.png",
+        "left": "Tools/Tripo/inputs/roof_turret/roof_turret_left.png",
+        "right": "Tools/Tripo/inputs/roof_turret/roof_turret_right.png",
+        "back": "Tools/Tripo/inputs/roof_turret/roof_turret_back.png"
+      },
+      "model": "web: HD Model, H3.1 Best Quality, multi-view; Retopo triangle 2000 (Smart Mesh P1.0) -> 2237 tris",
+      "face_limit": 2000,
+      "texture_size": 1024,
+      "rig": false,
+      "animations": [],
+      "unity": {
+        "prefab": "LL_RoofTurret",
+        "replaces_placeholder": "procedural turret (Gear TurretBase/Head/Barrels) (not yet swapped)",
+        "max_texture_size": 512,
+        "material": "LL_RoofTurret.mat (LastLight/DioramaTextured, _BaseMap = Textures/LL_RoofTurret_BaseColor.png)",
+        "import": "Set by Assets/LastLight/Editor/PropModelSetup.cs: no rig, no animation, no imported materials",
+        "collider": "none"
+      },
+      "notes": "Twin-barrel roof gun on a swivel base. Sheets from the Last Light ChatGPT session; generated on studio.tripo3d.ai (web credits only; the CLI must skip it). Run record in Tools/Tripo/runs/roof_turret/web/web.json."
+    },
+    {
+      "id": "plough_shovel",
+      "enabled": false,
+      "source": "web",
+      "category": "gear",
+      "prompt": null,
+      "input_images": {
+        "front": "Tools/Tripo/inputs/plough_shovel/plough_shovel_front.png",
+        "left": "Tools/Tripo/inputs/plough_shovel/plough_shovel_left.png",
+        "right": "Tools/Tripo/inputs/plough_shovel/plough_shovel_right.png",
+        "back": "Tools/Tripo/inputs/plough_shovel/plough_shovel_back.png"
+      },
+      "model": "web: HD Model, H3.1 Best Quality, multi-view; Retopo triangle 2000 (Smart Mesh P1.0) -> 2055 tris",
+      "face_limit": 2000,
+      "texture_size": 1024,
+      "rig": false,
+      "animations": [],
+      "unity": {
+        "prefab": "LL_PloughShovel",
+        "replaces_placeholder": "procedural shovel (Gear ShovelBlade/Arms) (not yet swapped)",
+        "max_texture_size": 512,
+        "material": "LL_PloughShovel.mat (LastLight/DioramaTextured, _BaseMap = Textures/LL_PloughShovel_BaseColor.png)",
+        "import": "Set by Assets/LastLight/Editor/PropModelSetup.cs: no rig, no animation, no imported materials",
+        "collider": "none"
+      },
+      "notes": "Front-mounted yellow and steel plough blade. Sheets from the Last Light ChatGPT session; generated on studio.tripo3d.ai (web credits only; the CLI must skip it). Run record in Tools/Tripo/runs/plough_shovel/web/web.json."
+    },
+    {
+      "id": "shield_pickup",
+      "enabled": false,
+      "source": "web",
+      "category": "pickup",
+      "prompt": null,
+      "input_images": {
+        "front": "Tools/Tripo/inputs/shield_pickup/shield_pickup_front.png",
+        "left": "Tools/Tripo/inputs/shield_pickup/shield_pickup_left.png",
+        "right": "Tools/Tripo/inputs/shield_pickup/shield_pickup_right.png",
+        "back": "Tools/Tripo/inputs/shield_pickup/shield_pickup_back.png"
+      },
+      "model": "web: HD Model, H3.1 Best Quality, multi-view; Retopo triangle 800 (Smart Mesh P1.0) -> 772 tris",
+      "face_limit": 800,
+      "texture_size": 1024,
+      "rig": false,
+      "animations": [],
+      "unity": {
+        "prefab": "LL_ShieldPickup",
+        "replaces_placeholder": "procedural shield pickup icon (not yet swapped)",
+        "max_texture_size": 512,
+        "material": "LL_ShieldPickup.mat (LastLight/DioramaTextured, _BaseMap = Textures/LL_ShieldPickup_BaseColor.png)",
+        "import": "Set by Assets/LastLight/Editor/PropModelSetup.cs: no rig, no animation, no imported materials",
+        "collider": "none (pickup radius in Pickup.cs)"
+      },
+      "notes": "Blue dome shield emblem collectible. Sheets from the Last Light ChatGPT session; generated on studio.tripo3d.ai (web credits only; the CLI must skip it). Run record in Tools/Tripo/runs/shield_pickup/web/web.json."
+    },
+    {
+      "id": "boost_pickup",
+      "enabled": false,
+      "source": "web",
+      "category": "pickup",
+      "prompt": null,
+      "input_images": {
+        "front": "Tools/Tripo/inputs/boost_pickup/boost_pickup_front.png",
+        "left": "Tools/Tripo/inputs/boost_pickup/boost_pickup_left.png",
+        "right": "Tools/Tripo/inputs/boost_pickup/boost_pickup_right.png",
+        "back": "Tools/Tripo/inputs/boost_pickup/boost_pickup_back.png"
+      },
+      "model": "web: HD Model, H3.1 Best Quality, multi-view; Retopo triangle 800 (Smart Mesh P1.0) -> 748 tris",
+      "face_limit": 800,
+      "texture_size": 1024,
+      "rig": false,
+      "animations": [],
+      "unity": {
+        "prefab": "LL_BoostPickup",
+        "replaces_placeholder": "procedural booster icon (Pickup boosterMesh) (not yet swapped)",
+        "max_texture_size": 512,
+        "material": "LL_BoostPickup.mat (LastLight/DioramaTextured, _BaseMap = Textures/LL_BoostPickup_BaseColor.png)",
+        "import": "Set by Assets/LastLight/Editor/PropModelSetup.cs: no rig, no animation, no imported materials",
+        "collider": "none (pickup radius in Pickup.cs)"
+      },
+      "notes": "Orange fuel canister with chevrons. Sheets from the Last Light ChatGPT session; generated on studio.tripo3d.ai (web credits only; the CLI must skip it). Run record in Tools/Tripo/runs/boost_pickup/web/web.json."
+    },
+    {
+      "id": "flashlight_pickup",
+      "enabled": false,
+      "source": "web",
+      "category": "pickup",
+      "prompt": null,
+      "input_images": {
+        "front": "Tools/Tripo/inputs/flashlight_pickup/flashlight_pickup_front.png",
+        "left": "Tools/Tripo/inputs/flashlight_pickup/flashlight_pickup_left.png",
+        "right": "Tools/Tripo/inputs/flashlight_pickup/flashlight_pickup_right.png",
+        "back": "Tools/Tripo/inputs/flashlight_pickup/flashlight_pickup_back.png"
+      },
+      "model": "web: HD Model, H3.1 Best Quality, multi-view; Retopo triangle 800 (Smart Mesh P1.0) -> 1059 tris",
+      "face_limit": 800,
+      "texture_size": 1024,
+      "rig": false,
+      "animations": [],
+      "unity": {
+        "prefab": "LL_FlashlightPickup",
+        "replaces_placeholder": "procedural flashlight icon (Pickup flashlightMesh) (not yet swapped)",
+        "max_texture_size": 512,
+        "material": "LL_FlashlightPickup.mat (LastLight/DioramaTextured, _BaseMap = Textures/LL_FlashlightPickup_BaseColor.png)",
+        "import": "Set by Assets/LastLight/Editor/PropModelSetup.cs: no rig, no animation, no imported materials",
+        "collider": "none (pickup radius in Pickup.cs)"
+      },
+      "notes": "Chunky handheld flashlight collectible. Sheets from the Last Light ChatGPT session; generated on studio.tripo3d.ai (web credits only; the CLI must skip it). Run record in Tools/Tripo/runs/flashlight_pickup/web/web.json."
+    },
+    {
+      "id": "repair_pickup",
+      "enabled": false,
+      "source": "web",
+      "category": "pickup",
+      "prompt": null,
+      "input_images": {
+        "front": "Tools/Tripo/inputs/repair_pickup/repair_pickup_front.png",
+        "left": "Tools/Tripo/inputs/repair_pickup/repair_pickup_left.png",
+        "right": "Tools/Tripo/inputs/repair_pickup/repair_pickup_right.png",
+        "back": "Tools/Tripo/inputs/repair_pickup/repair_pickup_back.png"
+      },
+      "model": "web: HD Model, H3.1 Best Quality, multi-view; Retopo triangle 800 (Smart Mesh P1.0) -> 820 tris",
+      "face_limit": 800,
+      "texture_size": 1024,
+      "rig": false,
+      "animations": [],
+      "unity": {
+        "prefab": "LL_RepairPickup",
+        "replaces_placeholder": "procedural repair icon (not yet swapped)",
+        "max_texture_size": 512,
+        "material": "LL_RepairPickup.mat (LastLight/DioramaTextured, _BaseMap = Textures/LL_RepairPickup_BaseColor.png)",
+        "import": "Set by Assets/LastLight/Editor/PropModelSetup.cs: no rig, no animation, no imported materials",
+        "collider": "none (pickup radius in Pickup.cs)"
+      },
+      "notes": "Crossed wrench and spanner collectible. Sheets from the Last Light ChatGPT session; generated on studio.tripo3d.ai (web credits only; the CLI must skip it). Run record in Tools/Tripo/runs/repair_pickup/web/web.json."
+    },
+    {
+      "id": "cliff_rock",
+      "enabled": false,
+      "source": "web",
+      "category": "rock",
+      "prompt": null,
+      "input_images": {
+        "front": "Tools/Tripo/inputs/cliff_rock/cliff_rock_front.png",
+        "left": "Tools/Tripo/inputs/cliff_rock/cliff_rock_left.png",
+        "right": "Tools/Tripo/inputs/cliff_rock/cliff_rock_right.png",
+        "back": "Tools/Tripo/inputs/cliff_rock/cliff_rock_back.png"
+      },
+      "model": "web: HD Model, H3.1 Best Quality, multi-view; Retopo triangle 1500 (Smart Mesh P1.0) -> 1986 tris",
+      "face_limit": 1500,
+      "texture_size": 1024,
+      "rig": false,
+      "animations": [],
+      "unity": {
+        "prefab": "LL_CliffRock",
+        "replaces_placeholder": "procedural cliff shards along the abyss (not yet swapped)",
+        "max_texture_size": 512,
+        "material": "LL_CliffRock.mat (LastLight/DioramaTextured, _BaseMap = Textures/LL_CliffRock_BaseColor.png)",
+        "import": "Set by Assets/LastLight/Editor/PropModelSetup.cs: no rig, no animation, no imported materials",
+        "collider": "none (decorative)"
+      },
+      "notes": "Tall layered rock slab for cliff walls. Sheets from the Last Light ChatGPT session; generated on studio.tripo3d.ai (web credits only; the CLI must skip it). Run record in Tools/Tripo/runs/cliff_rock/web/web.json."
+    },
+    {
+      "id": "scout_jeep",
+      "enabled": false,
+      "source": "web",
+      "category": "vehicle",
+      "prompt": null,
+      "input_images": {
+        "front": "Tools/Tripo/inputs/scout_jeep/scout_jeep_front.png",
+        "left": "Tools/Tripo/inputs/scout_jeep/scout_jeep_left.png",
+        "right": "Tools/Tripo/inputs/scout_jeep/scout_jeep_right.png",
+        "back": "Tools/Tripo/inputs/scout_jeep/scout_jeep_back.png"
+      },
+      "model": "web: HD Model, H3.1 Best Quality, multi-view; Retopo triangle 4000 (Smart Mesh P1.0) -> 4551 tris",
+      "face_limit": 4000,
+      "texture_size": 1024,
+      "rig": false,
+      "animations": [],
+      "unity": {
+        "prefab": "LL_ScoutJeep",
+        "replaces_placeholder": "the current Scout Jeep model (Art/Tripo/jeep, API-generated) (not yet swapped)",
+        "max_texture_size": 1024,
+        "material": "LL_ScoutJeep.mat (LastLight/DioramaTextured, _BaseMap = Textures/LL_ScoutJeep_BaseColor.png)",
+        "import": "Set by Assets/LastLight/Editor/PropModelSetup.cs: no rig, no animation, no imported materials",
+        "collider": "none (the vehicle footprint stays in Vehicle.cs)"
+      },
+      "notes": "Ochre Scout Jeep from the ChatGPT sheet: roof rack, rear spare, round headlights. Sheets from the Last Light ChatGPT session; generated on studio.tripo3d.ai (web credits only; the CLI must skip it). Run record in Tools/Tripo/runs/scout_jeep/web/web.json."
+    },
+    {
       "id": "pine_a",
       "enabled": true,
       "category": "foliage",
