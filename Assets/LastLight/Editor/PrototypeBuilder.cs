@@ -1442,7 +1442,7 @@ namespace LastLight.EditorTools
             });
             int throwStart = director.EventLog.Count;
             int bankBeforeThrow = director.Save.Coins, runCoinsBeforeThrow = director.Coins;
-            bool throwNotEarly = true, rockIsBoulderModel = false, rockShot = false;
+            bool throwNotEarly = true, rockIsBoulderModel = false, rockSelfLit = false, rockShot = false;
             if (throwTarget != null)
             {
                 for (float t = 0f; t < 2.5f && throwTarget.alive; t += dt)
@@ -1455,6 +1455,8 @@ namespace LastLight.EditorTools
                     {
                         var mf = rock.GetComponent<MeshFilter>();
                         if (mf != null && mf.sharedMesh == SceneryModels.Get(m => m.fallingBoulder).mesh) rockIsBoulderModel = true;
+                        var mr = rock.GetComponent<MeshRenderer>();
+                        if (mr != null && mr.sharedMaterial.GetFloat("_Emission") > 0.5f) rockSelfLit = true;
                         if (!rockShot)
                         {
                             rockShot = true;
@@ -1851,7 +1853,7 @@ namespace LastLight.EditorTools
             Check($"The autopilot crosses twin cliff roads on the safe strip ({twinCrossings} crossed, survived {lateSurvived}, {lateDistance:0} m)", twinCrossings >= 1 && lateSurvived);
             Check("Switching across the ridge gets the jeep off a dead strip; riding it to the end drops into the abyss", tookDeadStrip && ridgeEscaped && deadEndDrops);
             Check("A second's stare at a spitter throws a rock that knocks it down", (object)throwTarget != null && throwNotEarly && rockThrown && rockKnockedDown);
-            Check("The thrown rock is the Tripo boulder model", RockThrower.UsesModel && rockIsBoulderModel);
+            Check("The thrown rock is the Tripo boulder model, lit from within so it shows in the dark", RockThrower.UsesModel && rockIsBoulderModel && rockSelfLit);
             Check("A row of dots over the shovel shows its hits: all lit when fitted, one fewer per hit", shovelDotsFull && shovelDotsTrackHits);
             Check($"Knocking a spitter down with a rock pays {GameDirector.RockHitCoins} coins", rockRewarded);
             {

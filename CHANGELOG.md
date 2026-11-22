@@ -4,6 +4,12 @@ Builds are release APKs for PICO Swan (Android, ARM64), package `com.lastlight.p
 Version history before git: 0.1.1 to 0.1.5 were built and installed but not committed, so the first
 commit holds the 0.1.6 source.
 
+## 0.1.25
+
+- Fix: the Tripo boulder thrown at spitters was hard to see. It used the scenery's night-shaded material, so outside
+  the scout light it went dark, and the glow ball drew over it. It now glows from within like the powerups, is a
+  little bigger (1.1 across), and its halo is faint enough for the rock to show through.
+
 ## 0.1.24
 
 - The rock thrown at spitters is now the Tripo boulder model (the round hand-painted boulder), shrunk to a throwing

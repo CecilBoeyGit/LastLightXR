@@ -43,7 +43,9 @@ namespace LastLight
         readonly MaterialPropertyBlock mpb = new MaterialPropertyBlock();
         static Mesh rockMesh, glowMesh;
         /// <summary>How wide a thrown rock is, in disk units: the Tripo boulder is scaled to this.</summary>
-        public const float ThrownRockSize = 0.8f;
+        public const float ThrownRockSize = 1.1f;
+        /// <summary>The boulder's material lit from within, like the powerups, so the rock shows outside the scout light at night.</summary>
+        static Material boulderMat;
         /// <summary>Whether thrown rocks use the Tripo boulder model.</summary>
         public static bool UsesModel => SceneryModels.Get(m => m.fallingBoulder).Ready;
         /// <summary>The rocks in the air right now. For tests.</summary>
@@ -92,7 +94,8 @@ namespace LastLight
                 b.Rock(Vector3.zero, 0.38f, 909, Palette.Rock * 1.3f);
                 rockMesh = b.ToMesh("LL_ThrownRock");
                 b.Clear();
-                b.Orb(Vector3.zero, 0.6f, new Color(1f, 0.8f, 0.5f, 0.35f));
+                // A faint halo: enough to pick the rock out against the dark, thin enough that the boulder shows through it.
+                b.Orb(Vector3.zero, 0.75f, new Color(1f, 0.8f, 0.5f, 0.12f));
                 glowMesh = b.ToMesh("LL_ThrownRockGlow");
             }
             ringMesh = new Mesh { name = "LL_StareRing" };
@@ -165,10 +168,18 @@ namespace LastLight
         {
             // The Tripo boulder (2 across, centred) shrunk to a throwing stone, else the procedural rock.
             var model = SceneryModels.Get(m => m.fallingBoulder);
-            var r = model.Ready ? MeshBuilder.Spawn("Thrown Rock", parent, model.mesh, model.material)
+            if (model.Ready && boulderMat == null)
+            {
+                boulderMat = new Material(model.material) { name = "LL_ThrownBoulder" };
+                boulderMat.SetFloat("_Emission", 0.8f);
+                boulderMat.SetFloat("_ClipToDisk", 0f);
+                boulderMat.SetFloat("_SnowCover", 0f);
+            }
+            var r = model.Ready ? MeshBuilder.Spawn("Thrown Rock", parent, model.mesh, boulderMat)
                                 : MeshBuilder.Spawn("Thrown Rock", parent, rockMesh, rockMat);
             if (model.Ready) r.transform.localScale = Vector3.one * (ThrownRockSize / Mathf.Max(model.mesh.bounds.size.x, 1e-3f));
             var g = MeshBuilder.Spawn("Glow", r.transform, glowMesh, glowMat);
+            // The halo keeps its own size whatever the rock's scale.
             g.transform.localScale = new Vector3(1f / r.transform.localScale.x, 1f / r.transform.localScale.y, 1f / r.transform.localScale.z);
             float dist = Vector3.Distance(launch, z.CenterDioramaLocal);
             var rock = new Rock { t = r.transform, glow = g.transform, target = z, from = launch, duration = Mathf.Max(0.12f, dist / RockSpeed), arc = Mathf.Min(3f, dist * 0.08f) };
